@@ -55,13 +55,14 @@ Also fixed along the way:
 
 `views/js/infobia-ux.js` and `views/css/infobia-ux.css` add a layer on top of the existing markup. They do not replace it: prices, quantities and cart submission stay owned by `script_front.js`, so behaviour is unchanged.
 
-- **Search** across all tiles, accent-insensitive and tolerant of Polish inflection ("zupa" finds "Zupy").
-- **A live count per category** - `3 / 7` beside the heading, grey while short, green once the category is satisfied, red when over the limit. It uses the same rule the module validates on add-to-cart, so the shopper no longer discovers the problem only from an alert after pressing the button.
+- **A live count per category** - `3 / 7` beside the heading, set as type rather than as a chip: grey while the category is short, green once it is satisfied, red when it is over. It uses the same rule the module validates on add-to-cart, so the shopper no longer discovers the problem only from an alert after pressing the button.
 - **A per-tile ceiling note** - once a tile reaches its own maximum a small "maks. 5" appears beside it, so it is clear why "+" stopped responding.
+- **A chosen tile takes a green frame around its photograph**, the same mark the shop already uses on the gift tiles, rather than inventing a highlight of its own.
+- **The sticky bottom bar is hidden.** It repeated the price and add-to-cart already on the page. It is hidden rather than removed from the template on purpose: `#quantity_wanted_infobia` lives inside it and `script_front.js` reads that input when assembling the add-to-cart request, so deleting the markup would make the cart quantity `NaN`.
 
-That is the whole interface. Typography is inherited from the theme and the
-accent defaults to the shop's green, so the block reads as part of the page
-rather than as a second design. Override `--ipc-accent` to change it.
+Typography is inherited from the theme and the accent defaults to the shop's
+green, so the block reads as part of the page. Override `--ipc-accent` to
+change it.
 
 # FR
 

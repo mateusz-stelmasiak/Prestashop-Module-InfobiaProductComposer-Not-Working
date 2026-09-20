@@ -1,21 +1,19 @@
 /**
  * Infobia Product Composer - front office helpers.
  *
- * Styles for the search box, the per-category count and the per-tile ceiling
- * note added by views/js/infobia-ux.js.
+ * Two quiet signals on top of the module's own markup: a count beside each
+ * category heading, and a note on a tile that has hit its maximum. Plus one
+ * thing hidden - see the bottom of the file.
  *
- * Deliberately quiet. Typography is inherited from the theme, surfaces are
- * white like the rest of the shop, and the accent is the site's own green.
- * Override --ipc-accent to change it; where the botanical theme skin is
+ * Typography is inherited from the theme. The accent is the shop's green;
+ * override --ipc-accent to change it, and where the botanical theme skin is
  * installed it picks that up instead.
  */
 
 .ipc-root {
     --ipc-accent: var(--alh-green, #5bb001);
     --ipc-ink: #1d3c54;
-    --ipc-muted: #8c98a4;
-    --ipc-line: #e3e7ea;
-    --ipc-field: #f7f8f9;
+    --ipc-muted: #97a2ad;
     --ipc-radius: 4px;
 }
 
@@ -24,139 +22,37 @@
 }
 
 /* ------------------------------------------------------------------ *
- *  Search
- * ------------------------------------------------------------------ */
-
-.ipc-bar {
-    margin: 0 0 20px;
-}
-
-.ipc-search {
-    position: relative;
-    display: flex;
-    align-items: center;
-}
-
-.ipc-search__icon {
-    position: absolute;
-    left: 16px;
-    width: 13px;
-    height: 13px;
-    border: 1.5px solid var(--ipc-muted);
-    border-radius: 50%;
-    pointer-events: none;
-}
-
-.ipc-search__icon::after {
-    content: "";
-    position: absolute;
-    top: 12px;
-    left: 10px;
-    width: 7px;
-    height: 1.5px;
-    background: var(--ipc-muted);
-    transform: rotate(45deg);
-}
-
-.ipc-search__input {
-    width: 100%;
-    height: 46px;
-    padding: 0 42px 0 40px;
-    border: 1px solid var(--ipc-line);
-    border-radius: var(--ipc-radius);
-    background: var(--ipc-field) !important;
-    font: inherit;
-    font-size: 15px;
-    color: var(--ipc-ink);
-    -webkit-appearance: none;
-    appearance: none;
-    transition: border-color .15s ease, background-color .15s ease;
-}
-
-.ipc-search__input::placeholder {
-    color: var(--ipc-muted);
-}
-
-.ipc-search__input:focus {
-    outline: none;
-    border-color: var(--ipc-accent);
-    background: #fff !important;
-}
-
-.ipc-search__input::-webkit-search-cancel-button {
-    display: none;
-}
-
-.ipc-search__clear {
-    position: absolute;
-    right: 10px;
-    width: 26px;
-    height: 26px;
-    padding: 0;
-    border: 0;
-    border-radius: 50%;
-    background: transparent;
-    color: var(--ipc-muted);
-    font-size: 19px;
-    line-height: 1;
-    cursor: pointer;
-}
-
-.ipc-search__clear:hover {
-    color: var(--ipc-ink);
-}
-
-.ipc-status {
-    display: none;
-    margin: 10px 2px 0;
-    font-size: 13px;
-    color: var(--ipc-muted);
-}
-
-.ipc-status--active {
-    display: block;
-}
-
-.ipc-link {
-    padding: 0;
-    border: 0;
-    background: none;
-    color: var(--ipc-accent);
-    font: inherit;
-    font-size: inherit;
-    font-weight: 600;
-    cursor: pointer;
-}
-
-.ipc-link:hover {
-    text-decoration: underline;
-}
-
-/* ------------------------------------------------------------------ *
  *  Category count
+ *
+ *  Set as type, not as a chip. The shop does not use pills anywhere, so
+ *  the count sits beside the heading in the same voice and simply
+ *  changes colour once the category is satisfied.
  * ------------------------------------------------------------------ */
 
 .ipc-badge {
-    display: inline-block;
-    margin-left: 12px;
-    padding: 3px 10px;
-    border-radius: 20px;
-    background: var(--ipc-field);
+    margin-left: 14px;
     color: var(--ipc-muted);
-    font-size: 13px;
-    font-weight: 600;
-    letter-spacing: .01em;
+    font-size: .62em;
+    font-weight: 400;
+    letter-spacing: 0;
     vertical-align: middle;
+    white-space: nowrap;
     font-variant-numeric: tabular-nums;
+    transition: color .18s ease;
 }
 
-.ipc-badge--ok {
-    background: rgba(91, 176, 1, .12);
-    color: #4a8f01;
+.ipc-badge__n {
+    font-weight: 700;
+    color: var(--ipc-ink);
 }
 
-.ipc-badge--over {
-    background: rgba(198, 40, 40, .1);
+.ipc-badge--ok,
+.ipc-badge--ok .ipc-badge__n {
+    color: var(--ipc-accent);
+}
+
+.ipc-badge--over,
+.ipc-badge--over .ipc-badge__n {
     color: #c62828;
 }
 
@@ -171,38 +67,57 @@
     margin-top: 3px;
     text-align: center;
     font-size: 11px;
+    letter-spacing: .01em;
     color: var(--ipc-muted);
 }
 
 /* ------------------------------------------------------------------ *
  *  Selected tile
+ *
+ *  The shop already has a visual language for "this one is included":
+ *  the gift tiles carry a solid green frame around the photograph. A
+ *  chosen tile uses the same mark, rather than inventing a ring of its
+ *  own. The frame width and colour are set inline by the template, so
+ *  the colour has to be forced.
  * ------------------------------------------------------------------ */
 
 .ipc-root .infobiaCheckbox,
 .ipc-root .divInfobiaRadio {
     position: relative;
-    border-radius: var(--ipc-radius);
-    transition: box-shadow .15s ease;
 }
 
-.ipc-root .ipc-selected {
-    box-shadow: 0 0 0 2px var(--ipc-accent);
+.ipc-root .imgattrib {
+    border-radius: 0;
+    transition: border-color .15s ease;
 }
 
-@media (max-width: 768px) {
-    .ipc-bar {
-        margin-bottom: 16px;
-    }
+.ipc-root .ipc-selected .imgattrib {
+    border-color: var(--ipc-accent) !important;
+}
 
-    .ipc-badge {
-        margin-left: 8px;
-    }
+.ipc-root .ipc-selected .titreAttrib {
+    color: var(--ipc-ink);
+}
+
+/* ------------------------------------------------------------------ *
+ *  The sticky bottom bar
+ *
+ *  It repeats the price and the add-to-cart button that are already on
+ *  the page, and covers the last row of tiles on the way down.
+ *
+ *  Hidden rather than removed from the template on purpose:
+ *  #quantity_wanted_infobia lives inside it, and script_front.js reads
+ *  that input when it assembles the add-to-cart request. Take the bar
+ *  out of the DOM and the cart quantity becomes NaN.
+ * ------------------------------------------------------------------ */
+
+.product-prices-infobia {
+    display: none !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .ipc-search__input,
-    .ipc-root .infobiaCheckbox,
-    .ipc-root .divInfobiaRadio {
+    .ipc-badge,
+    .ipc-root .imgattrib {
         transition: none;
     }
 }
