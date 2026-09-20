@@ -41,12 +41,19 @@
         tooMany: 'za dużo o',
         complete: 'komplet',
         results: 'pasujące pozycje',
-        confirmClear: 'Wyczyścić wszystkie wybrane pozycje?'
+        confirmClear: 'Wyczyścić wszystkie wybrane pozycje?',
+        capped: 'maks.',
+        defaultTitle: 'Zestaw domyślny',
+        defaultDesc: 'Nasza propozycja na tę kategorię',
+        defaultApply: 'Wybierz domyślne',
+        defaultCurrent: 'Wybrane',
+        items: 'poz.'
     };
 
     var ROOT_ID = 'divInfobia';
     var CARD_SELECTOR = '.infobiaCheckbox, .divInfobiaRadio';
     var MIN_CARDS_FOR_SEARCH = 8;
+    var MAX_LEAF_PIPS = 9;
 
     var state = {
         root: null,
@@ -163,6 +170,8 @@
             name = titleEl.textContent;
         }
 
+        var stepper = el.querySelector('.plusminusDiv');
+
         var card = {
             el: el,
             input: input,
@@ -171,7 +180,15 @@
             haystack: '',
             words: [],
             childrenEl: null,
-            section: null
+            section: null,
+            // Per-tile ceiling, already clamped to stock server-side.
+            maxQty: stepper ? toInt(stepper.getAttribute('max_attr'), 0) : 0,
+            // Captured before the shopper touches anything, so "default" means
+            // what the shop configured rather than whatever is on screen now.
+            defaultChecked: input ? !!input.checked : false,
+            defaultQty: input ? toInt(input.getAttribute('default_qte'), 0) : 0,
+            templateCapEl: el.querySelector('.max-quantity-text'),
+            capEl: null
         };
 
         // The block of sub-questions this tile reveals when selected, so a
@@ -272,6 +289,35 @@
         }
 
         return Math.max(toInt(card.qtyInput.value, 0), 0);
+    }
+
+    /**
+     * Shows "maks. 5" beside a tile once its own ceiling is reached, so the
+     * shopper sees why "+" stopped responding instead of guessing. When the
+     * template already prints the limit, that element is highlighted instead
+     * of adding a second one.
+     */
+    function updateCap(card, qty) {
+        var capped = card.maxQty > 0 && qty >= card.maxQty;
+
+        if (card.templateCapEl) {
+            card.templateCapEl.classList.toggle('ipc-cap-hit', capped);
+            return;
+        }
+
+        if (capped && !card.capEl) {
+            card.capEl = makeEl('span', 'ipc-cap', STRINGS.capped + ' ' + card.maxQty);
+            var anchor = card.el.querySelector('.plusminusDiv');
+            if (anchor && anchor.parentNode) {
+                anchor.parentNode.insertBefore(card.capEl, anchor.nextSibling);
+            } else {
+                card.el.appendChild(card.capEl);
+            }
+        }
+
+        if (card.capEl) {
+            card.capEl.classList.toggle('ipc-hidden', !capped);
+        }
     }
 
     function isSelected(card) {
@@ -393,6 +439,101 @@
             var badge = makeEl('span', 'ipc-badge');
             section.labelEl.appendChild(badge);
             section.badgeEl = badge;
+        });
+    }
+
+    /** The quantity this tile carries when the category is left at defaults. */
+    function defaultQtyOf(card) {
+        return card.defaultChecked ? (card.defaultQty || 1) : 0;
+    }
+
+    /**
+     * A full-width "default set" row at the head of each category: one click
+     * restores the selection the shop configured, which is otherwise
+     * unrecoverable once the shopper starts changing quantities.
+     */
+    function buildDefaults() {
+        state.sections.forEach(function (section) {
+            var defaults = section.cards.filter(function (card) {
+                return defaultQtyOf(card) > 0;
+            });
+
+            if (!defaults.length) {
+                return;
+            }
+
+            var total = defaults.reduce(function (sum, card) {
+                return sum + defaultQtyOf(card);
+            }, 0);
+
+            var banner = makeEl('div', 'ipc-default');
+            banner.appendChild(makeEl('span', 'ipc-default__sprig'));
+
+            var text = makeEl('div', 'ipc-default__text');
+            text.appendChild(makeEl('span', 'ipc-default__title', STRINGS.defaultTitle));
+            text.appendChild(makeEl('span', 'ipc-default__desc',
+                STRINGS.defaultDesc + ' · ' + total + ' ' + STRINGS.items));
+            banner.appendChild(text);
+
+            var button = makeEl('button', 'ipc-default__btn', STRINGS.defaultApply);
+            button.type = 'button';
+            button.addEventListener('click', function () {
+                applyDefaults(section);
+            });
+            banner.appendChild(button);
+
+            var grid = section.el.querySelector('.checkbox-container') ||
+                section.el.querySelector('.optionInfobia');
+
+            if (!grid) {
+                return;
+            }
+
+            grid.insertBefore(banner, grid.firstChild);
+            section.defaultBanner = banner;
+            section.defaultButton = button;
+        });
+    }
+
+    function applyDefaults(section) {
+        section.cards.forEach(function (card) {
+            if (!card.input) {
+                return;
+            }
+
+            var wanted = defaultQtyOf(card);
+            if (cardQty(card) === wanted && card.input.checked === card.defaultChecked) {
+                return;
+            }
+
+            if (card.input.type === 'checkbox' && card.input.checked !== card.defaultChecked) {
+                card.input.checked = card.defaultChecked;
+                dispatch(card.input, 'change');
+            }
+
+            if (card.qtyInput) {
+                card.qtyInput.value = String(wanted);
+                dispatch(card.qtyInput, 'change');
+            }
+        });
+
+        refresh();
+    }
+
+    function refreshDefaultBanners() {
+        state.sections.forEach(function (section) {
+            if (!section.defaultBanner) {
+                return;
+            }
+
+            var atDefault = section.cards.every(function (card) {
+                return cardQty(card) === defaultQtyOf(card);
+            });
+
+            section.defaultBanner.classList.toggle('is-current', atDefault);
+            section.defaultButton.textContent = atDefault
+                ? STRINGS.defaultCurrent
+                : STRINGS.defaultApply;
         });
     }
 
@@ -529,6 +670,7 @@
         state.cards.forEach(function (card) {
             var qty = cardQty(card);
             card.el.classList.toggle('ipc-selected', qty > 0);
+            updateCap(card, qty);
 
             if (qty > 0) {
                 total += qty;
@@ -553,11 +695,7 @@
             }
 
             if (section.badgeEl) {
-                section.badgeEl.textContent = section.max
-                    ? picked + ' / ' + section.max
-                    : String(picked);
-                section.badgeEl.className = 'ipc-badge ipc-badge--' + status;
-                section.badgeEl.title = badgeHint(section, picked, status);
+                renderBadge(section, picked, status);
             }
 
             if (section.navCountEl) {
@@ -569,7 +707,38 @@
             }
         });
 
+        refreshDefaultBanners();
         renderSummary(chips, total);
+    }
+
+    /**
+     * A row of leaves reads at a glance; the numbers stay for exactness and
+     * for screen readers. Categories asking for more than a handful fall back
+     * to the number alone, where pips would just be noise.
+     */
+    function renderBadge(section, picked, status) {
+        var badge = section.badgeEl;
+
+        badge.className = 'ipc-badge ipc-badge--' + status;
+        badge.title = badgeHint(section, picked, status);
+        badge.innerHTML = '';
+
+        if (section.max >= 1 && section.max <= MAX_LEAF_PIPS) {
+            var leaves = makeEl('span', 'ipc-leaves');
+            leaves.setAttribute('aria-hidden', 'true');
+
+            for (var i = 0; i < section.max; i++) {
+                leaves.appendChild(makeEl('i', 'ipc-leaf' + (i < picked ? ' is-full' : '')));
+            }
+            if (picked > section.max) {
+                leaves.appendChild(makeEl('i', 'ipc-leaf is-extra'));
+            }
+
+            badge.appendChild(leaves);
+        }
+
+        badge.appendChild(makeEl('span', 'ipc-badge__text',
+            section.max ? picked + ' / ' + section.max : String(picked)));
     }
 
     function badgeHint(section, picked, status) {
@@ -724,6 +893,7 @@
 
         buildNav();
         buildBadges();
+        buildDefaults();
         bind();
         refresh();
     }
