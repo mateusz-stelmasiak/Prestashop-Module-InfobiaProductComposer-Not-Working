@@ -1,68 +1,45 @@
 /**
- * Infobia Product Composer - front office usability layer.
+ * Infobia Product Composer - front office helpers.
  *
- * Products built with this module can show several dozen option tiles in one
- * long scroll. The stock interface gives no way to find a tile, no running
- * indication of how many items a category still needs, and no summary of what
- * has been picked - the shopper only finds out something is wrong when the
- * add-to-cart validation pops an alert.
+ * A product built with this module can show thirty-odd tiles in one scroll.
+ * Three things are genuinely missing from the stock interface, and this file
+ * adds those and nothing else:
  *
- * This file adds, on top of the existing markup:
+ *   1. A search box, so a tile can be found without scrolling.
+ *   2. A "3 / 7" count on each category, using the same rule the module
+ *      validates on add-to-cart - otherwise the shopper only discovers the
+ *      problem from an alert after pressing the button.
+ *   3. A row that restores the shop's configured selection for a category,
+ *      and a note on a tile that has reached its own maximum.
  *
- *   - a search box that filters tiles as you type (diacritic-insensitive),
- *   - a live "3 / 7" progress badge per category, matching the same rule the
- *     module validates on submit,
- *   - a summary of everything currently selected, with click-to-scroll,
- *   - "show only selected" and "clear selection" shortcuts,
- *   - a clear selected state on the tiles themselves.
+ * It layers on top of the existing markup and leaves prices, quantities and
+ * cart submission to script_front.js. Without this file the module behaves
+ * exactly as before.
  *
- * It deliberately does not touch prices, quantities or cart submission: those
- * stay owned by script_front.js. Nothing here is required for the composer to
- * work - if this file is absent the module behaves exactly as before.
+ * Styling deliberately inherits the theme's font and colours rather than
+ * introducing its own, so the block reads as part of the page.
  */
 (function () {
     'use strict';
 
     var STRINGS = {
         searchLabel: 'Szukaj w składnikach',
-        searchPlaceholder: 'Szukaj np. „barszcz”, „gulasz”…',
-        clearSearch: 'Wyczyść wyszukiwanie',
-        onlySelected: 'Tylko wybrane',
-        clearAll: 'Wyczyść wybór',
-        summaryEmpty: 'Nie wybrano jeszcze żadnych pozycji.',
-        summaryTitle: 'Twój wybór',
+        searchPlaceholder: 'Szukaj składnika…',
+        clearSearch: 'Wyczyść',
         noResults: 'Brak pozycji pasujących do',
         showAll: 'Pokaż wszystkie',
-        hiddenSelected: 'wybrane pozycje są ukryte przez filtr',
-        jumpTo: 'Przejdź do:',
-        of: 'z',
-        selectedCount: 'wybrano',
-        remaining: 'brakuje',
-        tooMany: 'za dużo o',
-        complete: 'komplet',
         results: 'pasujące pozycje',
-        confirmClear: 'Wyczyścić wszystkie wybrane pozycje?',
         capped: 'maks.',
         defaultTitle: 'Zestaw domyślny',
-        defaultDesc: 'Nasza propozycja na tę kategorię',
-        defaultApply: 'Wybierz domyślne',
-        defaultCurrent: 'Wybrane',
-        items: 'poz.'
+        defaultApply: 'Wybierz',
+        defaultCurrent: 'Wybrany'
     };
 
     var ROOT_ID = 'divInfobia';
     var CARD_SELECTOR = '.infobiaCheckbox, .divInfobiaRadio';
     var MIN_CARDS_FOR_SEARCH = 8;
-    var MAX_LEAF_PIPS = 9;
 
-    var state = {
-        root: null,
-        sections: [],
-        cards: [],
-        query: '',
-        onlySelected: false,
-        els: {}
-    };
+    var state = { root: null, sections: [], cards: [], query: '', els: {} };
 
     /* ---------------------------------------------------------------- *
      *  Helpers
@@ -76,82 +53,55 @@
         }
     }
 
-    function toArray(nodeList) {
-        return Array.prototype.slice.call(nodeList || []);
+    function toArray(list) {
+        return Array.prototype.slice.call(list || []);
     }
 
-    /** Lowercase, strip accents, and fold the Polish letters NFD leaves alone. */
-    function normalize(value) {
-        var text = String(value == null ? '' : value).toLowerCase();
-
-        if (text.normalize) {
-            text = text.normalize('NFD').replace(/[̀-ͯ]/g, '');
-        }
-
-        return text
-            .replace(/ł/g, 'l')
-            .replace(/[^a-z0-9 ]+/g, ' ')
-            .replace(/\s+/g, ' ')
-            .trim();
+    function makeEl(tag, className, text) {
+        var el = document.createElement(tag);
+        if (className) { el.className = className; }
+        if (text != null) { el.textContent = text; }
+        return el;
     }
 
-    /**
-     * Polish is heavily inflected, so a shopper typing "zupa" must still find
-     * the "Zupy" category. Comparing on a crude stem rather than the literal
-     * word covers the common endings without pulling in a stemmer library.
-     */
-    function stem(word) {
-        if (word.length >= 6) {
-            return word.slice(0, word.length - 2);
-        }
-        if (word.length >= 4) {
-            return word.slice(0, word.length - 1);
-        }
-        return word;
-    }
-
-    function matchesTerm(card, term) {
-        if (card.haystack.indexOf(term) !== -1) {
-            return true;
-        }
-
-        var root = stem(term);
-        if (root.length < 3) {
-            return false;
-        }
-
-        return card.words.some(function (word) {
-            return word.indexOf(root) === 0;
-        });
+    function toInt(value, fallback) {
+        var n = parseInt(value, 10);
+        return isNaN(n) ? (fallback || 0) : n;
     }
 
     function closest(el, selector) {
-        if (el && el.closest) {
-            return el.closest(selector);
-        }
+        if (el && el.closest) { return el.closest(selector); }
         while (el && el.nodeType === 1) {
-            if (el.matches && el.matches(selector)) {
-                return el;
-            }
+            if (el.matches && el.matches(selector)) { return el; }
             el = el.parentElement;
         }
         return null;
     }
 
-    function makeEl(tag, className, text) {
-        var el = document.createElement(tag);
-        if (className) {
-            el.className = className;
+    /** Lowercase, strip accents, fold the Polish letters NFD leaves alone. */
+    function normalize(value) {
+        var text = String(value == null ? '' : value).toLowerCase();
+        if (text.normalize) {
+            text = text.normalize('NFD').replace(/[̀-ͯ]/g, '');
         }
-        if (text != null) {
-            el.textContent = text;
-        }
-        return el;
+        return text.replace(/ł/g, 'l').replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
     }
 
-    function toInt(value, fallback) {
-        var parsed = parseInt(value, 10);
-        return isNaN(parsed) ? (fallback || 0) : parsed;
+    /**
+     * Polish is heavily inflected, so "zupa" must still find "Zupy".
+     * Comparing on a crude stem covers the common endings without a stemmer.
+     */
+    function stem(word) {
+        if (word.length >= 6) { return word.slice(0, word.length - 2); }
+        if (word.length >= 4) { return word.slice(0, word.length - 1); }
+        return word;
+    }
+
+    function matchesTerm(card, term) {
+        if (card.haystack.indexOf(term) !== -1) { return true; }
+        var root = stem(term);
+        if (root.length < 3) { return false; }
+        return card.words.some(function (word) { return word.indexOf(root) === 0; });
     }
 
     /* ---------------------------------------------------------------- *
@@ -172,7 +122,7 @@
 
         var stepper = el.querySelector('.plusminusDiv');
 
-        var card = {
+        return {
             el: el,
             input: input,
             qtyInput: el.querySelector('input.quantity') || el.querySelector('input[type=number]'),
@@ -181,37 +131,19 @@
             words: [],
             childrenEl: null,
             section: null,
-            // Per-tile ceiling, already clamped to stock server-side.
             maxQty: stepper ? toInt(stepper.getAttribute('max_attr'), 0) : 0,
             // Captured before the shopper touches anything, so "default" means
-            // what the shop configured rather than whatever is on screen now.
+            // what the shop configured rather than what is on screen now.
             defaultChecked: input ? !!input.checked : false,
             defaultQty: input ? toInt(input.getAttribute('default_qte'), 0) : 0,
             templateCapEl: el.querySelector('.max-quantity-text'),
             capEl: null
         };
-
-        // The block of sub-questions this tile reveals when selected, so a
-        // filtered-out tile does not leave an orphan sub-question behind.
-        if (input) {
-            var idGroup = input.getAttribute('id_groupe');
-            var idOption = input.getAttribute('id_opt');
-            var idAttribute = input.getAttribute('id_att');
-            if (idGroup && idOption && idAttribute) {
-                card.childrenEl = document.getElementById(
-                    'Children_' + idGroup + '_' + idOption + '_' + idAttribute
-                );
-            }
-        }
-
-        return card;
     }
 
     function readSection(labelEl) {
         var container = closest(labelEl, '.divOptionInfobia');
-        if (!container) {
-            return null;
-        }
+        if (!container) { return null; }
 
         var type = labelEl.getAttribute('type_option') || '';
 
@@ -219,26 +151,22 @@
             el: container,
             labelEl: labelEl,
             name: (labelEl.getAttribute('name_option') || labelEl.textContent || '').trim(),
-            type: type,
             counts: (type === 'checkbox' || type === 'checkbox_img'),
             min: toInt(labelEl.getAttribute('min_attr_option'), 0),
             max: toInt(labelEl.getAttribute('max_attr_option'), 0),
             cards: [],
             badgeEl: null,
-            navEl: null
+            defaultRow: null,
+            defaultButton: null
         };
     }
 
     function collect(root) {
         var sections = [];
-        var byContainer = [];
 
         toArray(root.querySelectorAll('label.titleOption')).forEach(function (labelEl) {
             var section = readSection(labelEl);
-            if (section) {
-                sections.push(section);
-                byContainer.push(section);
-            }
+            if (section) { sections.push(section); }
         });
 
         var cards = toArray(root.querySelectorAll(CARD_SELECTOR)).map(readCard);
@@ -246,7 +174,7 @@
         cards.forEach(function (card) {
             var container = closest(card.el, '.divOptionInfobia');
 
-            // Sub-question tiles live in a `.children` block that is a sibling
+            // Sub-question tiles sit in a `.children` block that is a sibling
             // of the category they belong to.
             if (!container) {
                 var childrenBlock = closest(card.el, '.children');
@@ -259,17 +187,24 @@
                 }
             }
 
-            for (var i = 0; i < byContainer.length; i++) {
-                if (byContainer[i].el === container) {
-                    card.section = byContainer[i];
-                    byContainer[i].cards.push(card);
+            for (var i = 0; i < sections.length; i++) {
+                if (sections[i].el === container) {
+                    card.section = sections[i];
+                    sections[i].cards.push(card);
                     break;
                 }
             }
 
-            card.haystack = normalize(
-                card.name + ' ' + (card.section ? card.section.name : '')
-            );
+            if (card.input) {
+                var g = card.input.getAttribute('id_groupe');
+                var o = card.input.getAttribute('id_opt');
+                var a = card.input.getAttribute('id_att');
+                if (g && o && a) {
+                    card.childrenEl = document.getElementById('Children_' + g + '_' + o + '_' + a);
+                }
+            }
+
+            card.haystack = normalize(card.name + ' ' + (card.section ? card.section.name : ''));
             card.words = card.haystack ? card.haystack.split(' ') : [];
         });
 
@@ -281,21 +216,253 @@
      * ---------------------------------------------------------------- */
 
     function cardQty(card) {
-        if (!card.input || !card.input.checked) {
-            return 0;
-        }
-        if (!card.qtyInput) {
-            return 1;
-        }
-
+        if (!card.input || !card.input.checked) { return 0; }
+        if (!card.qtyInput) { return 1; }
         return Math.max(toInt(card.qtyInput.value, 0), 0);
     }
 
+    function defaultQtyOf(card) {
+        return card.defaultChecked ? (card.defaultQty || 1) : 0;
+    }
+
+    /* ---------------------------------------------------------------- *
+     *  Search
+     * ---------------------------------------------------------------- */
+
+    function buildSearch() {
+        var bar = makeEl('div', 'ipc-bar');
+        var field = makeEl('div', 'ipc-search');
+
+        var input = makeEl('input', 'ipc-search__input');
+        input.type = 'search';
+        input.placeholder = STRINGS.searchPlaceholder;
+        input.setAttribute('aria-label', STRINGS.searchLabel);
+        input.autocomplete = 'off';
+
+        var clear = makeEl('button', 'ipc-search__clear', '×');
+        clear.type = 'button';
+        clear.setAttribute('aria-label', STRINGS.clearSearch);
+
+        field.appendChild(makeEl('span', 'ipc-search__icon'));
+        field.appendChild(input);
+        field.appendChild(clear);
+        bar.appendChild(field);
+
+        var status = makeEl('p', 'ipc-status');
+        status.setAttribute('role', 'status');
+        status.setAttribute('aria-live', 'polite');
+        bar.appendChild(status);
+
+        state.els.bar = bar;
+        state.els.search = input;
+        state.els.clearSearch = clear;
+        state.els.status = status;
+
+        return bar;
+    }
+
+    function applyFilter() {
+        var query = normalize(state.query);
+        var terms = query ? query.split(' ') : [];
+        var visible = 0;
+
+        state.cards.forEach(function (card) {
+            var matches = !terms.length || terms.every(function (term) {
+                return matchesTerm(card, term);
+            });
+
+            card.el.classList.toggle('ipc-hidden', !matches);
+            if (card.childrenEl) {
+                card.childrenEl.classList.toggle('ipc-hidden', !matches);
+            }
+            if (matches) { visible++; }
+        });
+
+        state.sections.forEach(function (section) {
+            if (!section.cards.length) { return; }
+            var any = section.cards.some(function (card) {
+                return !card.el.classList.contains('ipc-hidden');
+            });
+            section.el.classList.toggle('ipc-hidden', !any);
+        });
+
+        toArray(state.root.querySelectorAll('.groupInfobia')).forEach(function (group) {
+            var any = toArray(group.querySelectorAll('.divOptionInfobia')).some(function (el) {
+                return !el.classList.contains('ipc-hidden');
+            });
+            group.classList.toggle('ipc-hidden', !any);
+        });
+
+        renderStatus(visible);
+    }
+
+    function renderStatus(visible) {
+        var status = state.els.status;
+        if (!status) { return; }
+
+        status.innerHTML = '';
+
+        if (!state.query) {
+            status.classList.remove('ipc-status--active');
+            return;
+        }
+
+        status.classList.add('ipc-status--active');
+        status.appendChild(document.createTextNode(
+            visible === 0
+                ? STRINGS.noResults + ' „' + state.query + '”. '
+                : visible + ' ' + STRINGS.results + '. '
+        ));
+
+        var reset = makeEl('button', 'ipc-link', STRINGS.showAll);
+        reset.type = 'button';
+        reset.addEventListener('click', resetSearch);
+        status.appendChild(reset);
+    }
+
+    function resetSearch() {
+        state.query = '';
+        if (state.els.search) { state.els.search.value = ''; }
+        applyFilter();
+    }
+
+    /* ---------------------------------------------------------------- *
+     *  Category count, per-tile ceiling, default row
+     * ---------------------------------------------------------------- */
+
+    function buildBadges() {
+        state.sections.forEach(function (section) {
+            if (!section.counts || !section.cards.length) { return; }
+            section.badgeEl = makeEl('span', 'ipc-badge');
+            section.labelEl.appendChild(section.badgeEl);
+        });
+    }
+
     /**
-     * Shows "maks. 5" beside a tile once its own ceiling is reached, so the
-     * shopper sees why "+" stopped responding instead of guessing. When the
-     * template already prints the limit, that element is highlighted instead
-     * of adding a second one.
+     * What "the default" means for a category.
+     *
+     * If the back office marked attributes as default, that is the answer and
+     * the template has already ticked them. Plenty of categories have nothing
+     * configured, though, and the shopper still deserves a one-click starting
+     * point - so fall back to the first items in the shop's own ordering,
+     * enough of them to satisfy the category minimum.
+     *
+     * @return array of {card, qty}
+     */
+    function defaultPicks(section) {
+        var fromConfig = section.cards.filter(function (card) {
+            return defaultQtyOf(card) > 0;
+        });
+
+        if (fromConfig.length) {
+            return fromConfig.map(function (card) {
+                return { card: card, qty: defaultQtyOf(card) };
+            });
+        }
+
+        var wanted = Math.max(section.min, 1);
+        if (section.max) { wanted = Math.min(wanted, section.max); }
+
+        return section.cards.slice(0, wanted).map(function (card) {
+            return { card: card, qty: card.maxQty ? Math.min(1, card.maxQty) : 1 };
+        });
+    }
+
+    function isAtDefault(section) {
+        var wanted = {};
+        section.picks.forEach(function (pick) {
+            wanted[pick.card.name] = pick.qty;
+        });
+
+        return section.cards.every(function (card) {
+            return cardQty(card) === (wanted[card.name] || 0);
+        });
+    }
+
+    /**
+     * A full-width row at the head of the grid presenting the default as a
+     * choice of its own, selected to begin with.
+     */
+    function buildDefaults() {
+        state.sections.forEach(function (section) {
+            if (!section.counts || !section.cards.length) { return; }
+
+            section.picks = defaultPicks(section);
+            if (!section.picks.length) { return; }
+
+            var row = makeEl('button', 'ipc-default');
+            row.type = 'button';
+            row.setAttribute('aria-pressed', 'false');
+
+            row.appendChild(makeEl('span', 'ipc-default__mark'));
+
+            var text = makeEl('span', 'ipc-default__text');
+            text.appendChild(makeEl('span', 'ipc-default__title', STRINGS.defaultTitle));
+            text.appendChild(makeEl('span', 'ipc-default__names',
+                section.picks.map(function (p) {
+                    return p.qty > 1 ? p.card.name + ' \u00d7' + p.qty : p.card.name;
+                }).join(', ')));
+            row.appendChild(text);
+
+            row.addEventListener('click', function () { applyDefaults(section); });
+
+            var grid = section.el.querySelector('.checkbox-container') ||
+                section.el.querySelector('.optionInfobia');
+            if (!grid) { return; }
+
+            grid.insertBefore(row, grid.firstChild);
+            section.defaultRow = row;
+        });
+    }
+
+    function applyDefaults(section) {
+        var wanted = {};
+        section.picks.forEach(function (pick) {
+            wanted[pick.card.name] = pick.qty;
+        });
+
+        section.cards.forEach(function (card) {
+            if (!card.input) { return; }
+
+            var qty = wanted[card.name] || 0;
+            var shouldCheck = qty > 0;
+
+            if (cardQty(card) === qty && card.input.checked === shouldCheck) { return; }
+
+            if (card.input.type === 'checkbox' && card.input.checked !== shouldCheck) {
+                card.input.checked = shouldCheck;
+                dispatch(card.input, 'change');
+            }
+            if (card.qtyInput) {
+                card.qtyInput.value = String(qty);
+                dispatch(card.qtyInput, 'change');
+            }
+        });
+
+        refresh();
+    }
+
+    /**
+     * Select the default on arrival, for categories the shopper has not
+     * touched. Categories the back office already ticked are left alone -
+     * the template has done the work and re-applying would be a no-op.
+     */
+    function selectDefaultsOnLoad() {
+        state.sections.forEach(function (section) {
+            if (!section.picks || !section.picks.length) { return; }
+
+            var anySelected = section.cards.some(function (card) {
+                return cardQty(card) > 0;
+            });
+
+            if (!anySelected) { applyDefaults(section); }
+        });
+    }
+
+    /**
+     * Shows "maks. 5" beside a tile at its ceiling, so it is clear why "+"
+     * stopped responding. Where the template already prints the limit, that
+     * element is emphasised instead of adding a second one.
      */
     function updateCap(card, qty) {
         var capped = card.maxQty > 0 && qty >= card.maxQty;
@@ -314,508 +481,50 @@
                 card.el.appendChild(card.capEl);
             }
         }
-
         if (card.capEl) {
             card.capEl.classList.toggle('ipc-hidden', !capped);
         }
     }
 
-    function isSelected(card) {
-        return cardQty(card) > 0;
-    }
-
-    /* ---------------------------------------------------------------- *
-     *  Building the toolbar
-     * ---------------------------------------------------------------- */
-
-    function buildToolbar(showSearch) {
-        var bar = makeEl('div', 'ipc-bar');
-        var row = makeEl('div', 'ipc-bar__row');
-
-        if (showSearch) {
-            var field = makeEl('div', 'ipc-search');
-            var input = makeEl('input', 'ipc-search__input');
-            input.type = 'search';
-            input.placeholder = STRINGS.searchPlaceholder;
-            input.setAttribute('aria-label', STRINGS.searchLabel);
-            input.autocomplete = 'off';
-
-            var clear = makeEl('button', 'ipc-search__clear', '×');
-            clear.type = 'button';
-            clear.setAttribute('aria-label', STRINGS.clearSearch);
-
-            field.appendChild(makeEl('span', 'ipc-search__icon'));
-            field.appendChild(input);
-            field.appendChild(clear);
-            row.appendChild(field);
-
-            state.els.search = input;
-            state.els.clearSearch = clear;
-        }
-
-        var actions = makeEl('div', 'ipc-bar__actions');
-
-        var onlyBtn = makeEl('button', 'ipc-toggle', STRINGS.onlySelected);
-        onlyBtn.type = 'button';
-        onlyBtn.setAttribute('aria-pressed', 'false');
-
-        var clearAllBtn = makeEl('button', 'ipc-ghost', STRINGS.clearAll);
-        clearAllBtn.type = 'button';
-
-        actions.appendChild(onlyBtn);
-        actions.appendChild(clearAllBtn);
-        row.appendChild(actions);
-        bar.appendChild(row);
-
-        var nav = makeEl('div', 'ipc-nav');
-        bar.appendChild(nav);
-
-        var summary = makeEl('div', 'ipc-summary');
-        var summaryHead = makeEl('div', 'ipc-summary__head');
-        summaryHead.appendChild(makeEl('span', 'ipc-summary__title', STRINGS.summaryTitle));
-        summaryHead.appendChild(makeEl('span', 'ipc-summary__total'));
-        var summaryList = makeEl('div', 'ipc-summary__list');
-        summary.appendChild(summaryHead);
-        summary.appendChild(summaryList);
-        bar.appendChild(summary);
-
-        var status = makeEl('p', 'ipc-status');
-        status.setAttribute('role', 'status');
-        status.setAttribute('aria-live', 'polite');
-        bar.appendChild(status);
-
-        state.els.bar = bar;
-        state.els.nav = nav;
-        state.els.onlyBtn = onlyBtn;
-        state.els.clearAllBtn = clearAllBtn;
-        state.els.summary = summary;
-        state.els.summaryList = summaryList;
-        state.els.summaryTotal = summaryHead.querySelector('.ipc-summary__total');
-        state.els.status = status;
-
-        return bar;
-    }
-
-    function buildNav() {
-        var nav = state.els.nav;
-        if (!nav) {
-            return;
-        }
-
-        var countable = state.sections.filter(function (section) {
-            return section.name && section.cards.length;
-        });
-
-        if (countable.length < 2) {
-            nav.style.display = 'none';
-            return;
-        }
-
-        nav.appendChild(makeEl('span', 'ipc-nav__label', STRINGS.jumpTo));
-
-        countable.forEach(function (section) {
-            var chip = makeEl('button', 'ipc-chip');
-            chip.type = 'button';
-            chip.appendChild(makeEl('span', 'ipc-chip__name', section.name));
-            var count = makeEl('span', 'ipc-chip__count');
-            chip.appendChild(count);
-
-            chip.addEventListener('click', function () {
-                scrollToEl(section.el);
-            });
-
-            section.navEl = chip;
-            section.navCountEl = count;
-            nav.appendChild(chip);
-        });
-    }
-
-    function buildBadges() {
-        state.sections.forEach(function (section) {
-            if (!section.counts || !section.cards.length) {
-                return;
-            }
-
-            var badge = makeEl('span', 'ipc-badge');
-            section.labelEl.appendChild(badge);
-            section.badgeEl = badge;
-        });
-    }
-
-    /** The quantity this tile carries when the category is left at defaults. */
-    function defaultQtyOf(card) {
-        return card.defaultChecked ? (card.defaultQty || 1) : 0;
-    }
-
-    /**
-     * A full-width "default set" row at the head of each category: one click
-     * restores the selection the shop configured, which is otherwise
-     * unrecoverable once the shopper starts changing quantities.
-     */
-    function buildDefaults() {
-        state.sections.forEach(function (section) {
-            var defaults = section.cards.filter(function (card) {
-                return defaultQtyOf(card) > 0;
-            });
-
-            if (!defaults.length) {
-                return;
-            }
-
-            var total = defaults.reduce(function (sum, card) {
-                return sum + defaultQtyOf(card);
-            }, 0);
-
-            var banner = makeEl('div', 'ipc-default');
-            banner.appendChild(makeEl('span', 'ipc-default__sprig'));
-
-            var text = makeEl('div', 'ipc-default__text');
-            text.appendChild(makeEl('span', 'ipc-default__title', STRINGS.defaultTitle));
-            text.appendChild(makeEl('span', 'ipc-default__desc',
-                STRINGS.defaultDesc + ' · ' + total + ' ' + STRINGS.items));
-            banner.appendChild(text);
-
-            var button = makeEl('button', 'ipc-default__btn', STRINGS.defaultApply);
-            button.type = 'button';
-            button.addEventListener('click', function () {
-                applyDefaults(section);
-            });
-            banner.appendChild(button);
-
-            var grid = section.el.querySelector('.checkbox-container') ||
-                section.el.querySelector('.optionInfobia');
-
-            if (!grid) {
-                return;
-            }
-
-            grid.insertBefore(banner, grid.firstChild);
-            section.defaultBanner = banner;
-            section.defaultButton = button;
-        });
-    }
-
-    function applyDefaults(section) {
-        section.cards.forEach(function (card) {
-            if (!card.input) {
-                return;
-            }
-
-            var wanted = defaultQtyOf(card);
-            if (cardQty(card) === wanted && card.input.checked === card.defaultChecked) {
-                return;
-            }
-
-            if (card.input.type === 'checkbox' && card.input.checked !== card.defaultChecked) {
-                card.input.checked = card.defaultChecked;
-                dispatch(card.input, 'change');
-            }
-
-            if (card.qtyInput) {
-                card.qtyInput.value = String(wanted);
-                dispatch(card.qtyInput, 'change');
-            }
-        });
-
-        refresh();
-    }
-
-    function refreshDefaultBanners() {
-        state.sections.forEach(function (section) {
-            if (!section.defaultBanner) {
-                return;
-            }
-
-            var atDefault = section.cards.every(function (card) {
-                return cardQty(card) === defaultQtyOf(card);
-            });
-
-            section.defaultBanner.classList.toggle('is-current', atDefault);
-            section.defaultButton.textContent = atDefault
-                ? STRINGS.defaultCurrent
-                : STRINGS.defaultApply;
-        });
-    }
-
-    function scrollToEl(el) {
-        if (!el) {
-            return;
-        }
-
-        var bar = state.els.bar;
-        var offset = bar ? bar.getBoundingClientRect().height + 12 : 0;
-        var top = window.pageYOffset + el.getBoundingClientRect().top - offset;
-
-        try {
-            window.scrollTo({ top: top, behavior: 'smooth' });
-        } catch (e) {
-            window.scrollTo(0, top);
-        }
-    }
-
-    /* ---------------------------------------------------------------- *
-     *  Rendering
-     * ---------------------------------------------------------------- */
-
-    function applyFilter() {
-        var query = normalize(state.query);
-        var terms = query ? query.split(' ') : [];
-        var visible = 0;
-        var hiddenSelected = 0;
-
-        state.cards.forEach(function (card) {
-            var matches = true;
-
-            if (terms.length) {
-                matches = terms.every(function (term) {
-                    return matchesTerm(card, term);
-                });
-            }
-
-            if (matches && state.onlySelected && !isSelected(card)) {
-                matches = false;
-            }
-
-            card.el.classList.toggle('ipc-hidden', !matches);
-            if (card.childrenEl) {
-                card.childrenEl.classList.toggle('ipc-hidden', !matches);
-            }
-
-            if (matches) {
-                visible++;
-            } else if (isSelected(card)) {
-                hiddenSelected++;
-            }
-        });
-
-        // Collapse categories that have nothing left to show.
-        state.sections.forEach(function (section) {
-            if (!section.cards.length) {
-                return;
-            }
-            var anyVisible = section.cards.some(function (card) {
-                return !card.el.classList.contains('ipc-hidden');
-            });
-            section.el.classList.toggle('ipc-hidden', !anyVisible);
-            if (section.navEl) {
-                section.navEl.classList.toggle('ipc-chip--dimmed', !anyVisible);
-            }
-        });
-
-        toArray(state.root.querySelectorAll('.groupInfobia')).forEach(function (group) {
-            var anyVisible = toArray(group.querySelectorAll('.divOptionInfobia')).some(function (el) {
-                return !el.classList.contains('ipc-hidden');
-            });
-            group.classList.toggle('ipc-hidden', !anyVisible);
-        });
-
-        renderStatus(visible, hiddenSelected);
-    }
-
-    function renderStatus(visible, hiddenSelected) {
-        var status = state.els.status;
-        if (!status) {
-            return;
-        }
-
-        var filtering = state.query || state.onlySelected;
-        status.innerHTML = '';
-
-        if (!filtering) {
-            status.classList.remove('ipc-status--active');
-            return;
-        }
-
-        status.classList.add('ipc-status--active');
-
-        if (visible === 0) {
-            status.appendChild(document.createTextNode(
-                STRINGS.noResults + ' „' + state.query + '”. '
-            ));
-        } else {
-            status.appendChild(document.createTextNode(
-                visible + ' ' + STRINGS.results + '. '
-            ));
-        }
-
-        if (hiddenSelected > 0) {
-            status.appendChild(document.createTextNode(
-                '(' + hiddenSelected + ' ' + STRINGS.hiddenSelected + '.) '
-            ));
-        }
-
-        var reset = makeEl('button', 'ipc-link', STRINGS.showAll);
-        reset.type = 'button';
-        reset.addEventListener('click', resetFilters);
-        status.appendChild(reset);
-    }
-
-    function resetFilters() {
-        state.query = '';
-        state.onlySelected = false;
-        if (state.els.search) {
-            state.els.search.value = '';
-        }
-        if (state.els.onlyBtn) {
-            state.els.onlyBtn.classList.remove('is-active');
-            state.els.onlyBtn.setAttribute('aria-pressed', 'false');
-        }
-        applyFilter();
-    }
-
-    function renderSelection() {
-        var total = 0;
-        var chips = [];
-
+    function refresh() {
         state.cards.forEach(function (card) {
             var qty = cardQty(card);
             card.el.classList.toggle('ipc-selected', qty > 0);
             updateCap(card, qty);
-
-            if (qty > 0) {
-                total += qty;
-                chips.push({ card: card, qty: qty });
-            }
         });
 
         state.sections.forEach(function (section) {
-            if (!section.counts) {
-                return;
-            }
-
             var picked = section.cards.reduce(function (sum, card) {
                 return sum + cardQty(card);
             }, 0);
 
-            var status = 'under';
-            if (section.max && picked > section.max) {
-                status = 'over';
-            } else if (picked >= section.min && (!section.max || picked <= section.max)) {
-                status = picked > 0 || section.min === 0 ? 'ok' : 'under';
-            }
-
             if (section.badgeEl) {
-                renderBadge(section, picked, status);
-            }
-
-            if (section.navCountEl) {
-                section.navCountEl.textContent = section.max
-                    ? picked + '/' + section.max
-                    : String(picked);
-                section.navEl.classList.toggle('ipc-chip--done', status === 'ok' && picked > 0);
-                section.navEl.classList.toggle('ipc-chip--over', status === 'over');
-            }
-        });
-
-        refreshDefaultBanners();
-        renderSummary(chips, total);
-    }
-
-    /**
-     * A row of leaves reads at a glance; the numbers stay for exactness and
-     * for screen readers. Categories asking for more than a handful fall back
-     * to the number alone, where pips would just be noise.
-     */
-    function renderBadge(section, picked, status) {
-        var badge = section.badgeEl;
-
-        badge.className = 'ipc-badge ipc-badge--' + status;
-        badge.title = badgeHint(section, picked, status);
-        badge.innerHTML = '';
-
-        if (section.max >= 1 && section.max <= MAX_LEAF_PIPS) {
-            var leaves = makeEl('span', 'ipc-leaves');
-            leaves.setAttribute('aria-hidden', 'true');
-
-            for (var i = 0; i < section.max; i++) {
-                leaves.appendChild(makeEl('i', 'ipc-leaf' + (i < picked ? ' is-full' : '')));
-            }
-            if (picked > section.max) {
-                leaves.appendChild(makeEl('i', 'ipc-leaf is-extra'));
-            }
-
-            badge.appendChild(leaves);
-        }
-
-        badge.appendChild(makeEl('span', 'ipc-badge__text',
-            section.max ? picked + ' / ' + section.max : String(picked)));
-    }
-
-    function badgeHint(section, picked, status) {
-        if (status === 'over') {
-            return STRINGS.tooMany + ' ' + (picked - section.max);
-        }
-        if (picked < section.min) {
-            return STRINGS.remaining + ' ' + (section.min - picked);
-        }
-        return STRINGS.complete;
-    }
-
-    function renderSummary(chips, total) {
-        var list = state.els.summaryList;
-        if (!list) {
-            return;
-        }
-
-        list.innerHTML = '';
-        state.els.summaryTotal.textContent = total > 0 ? String(total) : '';
-        state.els.summary.classList.toggle('is-empty', total === 0);
-
-        if (total === 0) {
-            list.appendChild(makeEl('span', 'ipc-summary__empty', STRINGS.summaryEmpty));
-            return;
-        }
-
-        chips.forEach(function (entry) {
-            var chip = makeEl('button', 'ipc-pill');
-            chip.type = 'button';
-            chip.appendChild(makeEl('span', 'ipc-pill__qty', '×' + entry.qty));
-            chip.appendChild(makeEl('span', 'ipc-pill__name', entry.card.name));
-            chip.title = entry.card.name;
-            chip.addEventListener('click', function () {
-                if (entry.card.el.classList.contains('ipc-hidden')) {
-                    resetFilters();
+                var status = 'under';
+                if (section.max && picked > section.max) {
+                    status = 'over';
+                } else if (picked >= section.min && (!section.max || picked <= section.max)) {
+                    status = (picked > 0 || section.min === 0) ? 'ok' : 'under';
                 }
-                scrollToEl(entry.card.el);
-                entry.card.el.classList.add('ipc-flash');
-                setTimeout(function () {
-                    entry.card.el.classList.remove('ipc-flash');
-                }, 1200);
-            });
-            list.appendChild(chip);
-        });
-    }
 
-    function refresh() {
-        renderSelection();
-        if (state.onlySelected) {
-            applyFilter();
-        }
+                section.badgeEl.textContent = section.max
+                    ? picked + ' / ' + section.max
+                    : String(picked);
+                section.badgeEl.className = 'ipc-badge ipc-badge--' + status;
+            }
+
+            if (section.defaultRow) {
+                var atDefault = isAtDefault(section);
+                section.defaultRow.classList.toggle('is-current', atDefault);
+                section.defaultRow.setAttribute('aria-pressed', atDefault ? 'true' : 'false');
+            }
+        });
     }
 
     /* ---------------------------------------------------------------- *
      *  Wiring
      * ---------------------------------------------------------------- */
 
-    function clearSelection() {
-        if (!window.confirm(STRINGS.confirmClear)) {
-            return;
-        }
-
-        state.cards.forEach(function (card) {
-            if (card.qtyInput && toInt(card.qtyInput.value, 0) !== 0) {
-                card.qtyInput.value = 0;
-            }
-            if (card.input && card.input.checked && card.input.type === 'checkbox') {
-                card.input.checked = false;
-                dispatch(card.input, 'change');
-            }
-        });
-
-        refresh();
-    }
-
-    /** Fires an event the module's jQuery handlers will also see. */
+    /** Fires an event the module's own jQuery handlers will also see. */
     function dispatch(el, type) {
         var event;
         try {
@@ -836,50 +545,29 @@
                 timer = setTimeout(applyFilter, 120);
             });
             state.els.search.addEventListener('keydown', function (event) {
-                if (event.key === 'Escape') {
-                    resetFilters();
-                }
+                if (event.key === 'Escape') { resetSearch(); }
             });
-            state.els.clearSearch.addEventListener('click', resetFilters);
+            state.els.clearSearch.addEventListener('click', resetSearch);
         }
 
-        state.els.onlyBtn.addEventListener('click', function () {
-            state.onlySelected = !state.onlySelected;
-            this.classList.toggle('is-active', state.onlySelected);
-            this.setAttribute('aria-pressed', state.onlySelected ? 'true' : 'false');
-            applyFilter();
-        });
-
-        state.els.clearAllBtn.addEventListener('click', clearSelection);
-
         // Quantities are changed by the module's own jQuery handlers, which do
-        // not emit native events. Every such change still originates from a
-        // user gesture inside the composer, so re-read state just after one.
+        // not emit native events. Every such change still comes from a user
+        // gesture inside the composer, so re-read state just after one.
         ['click', 'change', 'input', 'keyup'].forEach(function (type) {
             state.root.addEventListener(type, function (event) {
-                if (closest(event.target, '.ipc-bar')) {
-                    return;
-                }
+                if (closest(event.target, '.ipc-bar')) { return; }
                 window.requestAnimationFrame(refresh);
                 setTimeout(refresh, 180);
             });
         });
     }
 
-    /* ---------------------------------------------------------------- *
-     *  Boot
-     * ---------------------------------------------------------------- */
-
     function init() {
         var root = document.getElementById(ROOT_ID);
-        if (!root || root.hasAttribute('data-ipc-enhanced')) {
-            return;
-        }
+        if (!root || root.hasAttribute('data-ipc-enhanced')) { return; }
 
         var collected = collect(root);
-        if (!collected.cards.length) {
-            return;
-        }
+        if (!collected.cards.length) { return; }
 
         root.setAttribute('data-ipc-enhanced', '1');
         root.classList.add('ipc-root');
@@ -888,13 +576,14 @@
         state.sections = collected.sections;
         state.cards = collected.cards;
 
-        var bar = buildToolbar(collected.cards.length >= MIN_CARDS_FOR_SEARCH);
-        root.insertBefore(bar, root.firstChild);
+        if (collected.cards.length >= MIN_CARDS_FOR_SEARCH) {
+            root.insertBefore(buildSearch(), root.firstChild);
+        }
 
-        buildNav();
         buildBadges();
         buildDefaults();
         bind();
+        selectDefaultsOnLoad();
         refresh();
     }
 
