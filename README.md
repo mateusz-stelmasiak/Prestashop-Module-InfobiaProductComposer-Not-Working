@@ -45,11 +45,15 @@ Also fixed along the way:
 `views/js/infobia-ux.js` and `views/css/infobia-ux.css` add a layer on top of the existing markup. They do not replace it: prices, quantities and cart submission stay owned by `script_front.js`, so behaviour is unchanged.
 
 - **Search** across all tiles, accent-insensitive and tolerant of Polish inflection ("zupa" finds "Zupy").
-- **Live progress per category** — a `3 / 7` badge that turns green when the category is satisfied and red when it is over the limit, using the same rule the module validates on add-to-cart. Previously the shopper only found out on submit, via an alert.
+- **Live progress per category** — a stem of leaves that fill in as items are picked, with the count alongside: green when the category is satisfied, amber while short, beet when over the limit. It uses the same rule the module validates on add-to-cart, so the shopper no longer finds out only on submit, via an alert.
+- **A default-set row** at the head of each category, full width, restoring the selection the shop configured. The defaults are captured on load, before anything is touched, so they stay recoverable however much the shopper changes.
+- **A per-tile cap notice** — once a tile reaches its own maximum a small "maks. 5" appears beside it, so it is clear why "+" stopped responding.
 - **Selection summary** listing everything picked, with click-to-scroll back to any tile.
 - **Jump links** to each category, with their current counts.
 - **"Only selected"** and **"clear selection"** shortcuts.
 - A visible selected state on the tiles themselves.
+
+Visually it is a botanical treatment — pressed-paper cream, sage and clay, a serif for anything that speaks, leaf-shaped geometry and vine rules — to match a shop selling jars of vegetables. All of it is plain CSS and inline SVG: no fonts, images or scripts are fetched.
 
 # FR
 
@@ -71,4 +75,5 @@ Les deux fichiers `views/` sont **optionnels** : en ne copiant que `infobia_prod
 
 - **Requêtes SQL** : l'arbre des options est désormais chargé niveau par niveau. Sur un produit de 5 groupes / 5 options / 33 attributs, on passe de 86-119 requêtes à 6, et ce nombre ne dépend plus de la taille du composeur. L'arbre produit est identique à l'octet près à celui du code d'origine.
 - **Correctifs** : préfixe de table `ps_` codé en dur, valeurs non échappées dans les requêtes, appel au serveur de licence hors ligne qui bloquait la page de configuration, taux de TVA erroné pour les sous-options sur la page d'accueil.
-- **Interface** : recherche dans les vignettes (insensible aux accents et aux flexions), compteur `3 / 7` en direct par catégorie, récapitulatif des choix, liens de navigation, filtres « uniquement sélectionnés » et « effacer la sélection ».
+- **Interface** : recherche dans les vignettes (insensible aux accents et aux flexions) ; progression en direct par catégorie, dessinée comme une tige de feuilles qui se remplit, selon la règle même que le module valide à l'ajout au panier ; une ligne « sélection par défaut » en pleine largeur en tête de chaque catégorie, qui rétablit le choix configuré par la boutique ; une mention « maks. 5 » dès qu'une vignette atteint son plafond ; récapitulatif des choix, liens de navigation, filtres « uniquement sélectionnés » et « effacer la sélection ».
+- **Habillage** : traitement botanique (papier crème, vert sauge et terre cuite, titres en serif, géométrie en feuille, filets en vigne), entièrement en CSS et SVG en ligne - aucune police, image ni script supplémentaire n'est chargé.
