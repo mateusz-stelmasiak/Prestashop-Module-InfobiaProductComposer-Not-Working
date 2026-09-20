@@ -18,12 +18,15 @@
     'use strict';
 
     var STRINGS = {
-        capped: 'maks.'
+        capped: 'maks.',
+        defaultTitle: 'Zestaw domyślny',
+        defaultApply: 'Wybierz',
+        defaultCurrent: 'Wybrany'
     };
 
     /* Stamped onto the composer root, so which build is actually live can
      * be read straight off the element instead of guessed. */
-    var BUILD = '2026-09-20d';
+    var BUILD = '2026-09-20e';
 
     var ROOT_ID = 'divInfobia';
     var CARD_SELECTOR = '.infobiaCheckbox, .divInfobiaRadio';
@@ -80,6 +83,11 @@
                 el.querySelector('input[type=checkbox], input[type=radio]'),
             qtyInput: el.querySelector('input.quantity') || el.querySelector('input[type=number]'),
             maxQty: stepper ? toInt(stepper.getAttribute('max_attr'), 0) : 0,
+            name: (el.querySelector('.titreAttrib') || {}).textContent || '',
+            // captured before the shopper touches anything
+            defaultChecked: !!(el.querySelector('.inputInfobia') || {}).checked,
+            defaultQty: toInt(((el.querySelector('.inputInfobia') || {}).getAttribute
+                ? el.querySelector('.inputInfobia').getAttribute('default_qte') : 0), 0),
             templateCapEl: el.querySelector('.max-quantity-text'),
             capEl: null
         };
@@ -98,7 +106,9 @@
             min: toInt(labelEl.getAttribute('min_attr_option'), 0),
             max: toInt(labelEl.getAttribute('max_attr_option'), 0),
             cards: [],
-            badgeEl: null
+            badgeEl: null,
+            picks: null,
+            defaultRow: null
         };
     }
 
@@ -144,6 +154,102 @@
         if (!card.input || !card.input.checked) { return 0; }
         if (!card.qtyInput) { return 1; }
         return Math.max(toInt(card.qtyInput.value, 0), 0);
+    }
+
+    function defaultQtyOf(card) {
+        return card.defaultChecked ? (card.defaultQty || 1) : 0;
+    }
+
+    /**
+     * What "the default" means here: whatever the back office marked, and
+     * failing that the first items in the shop's own ordering, enough of
+     * them to meet the category minimum.
+     */
+    function defaultPicks(section) {
+        var configured = section.cards.filter(function (c) { return defaultQtyOf(c) > 0; });
+        if (configured.length) {
+            return configured.map(function (c) { return { card: c, qty: defaultQtyOf(c) }; });
+        }
+
+        var wanted = Math.max(section.min, 1);
+        if (section.max) { wanted = Math.min(wanted, section.max); }
+
+        return section.cards.slice(0, wanted).map(function (c) { return { card: c, qty: 1 }; });
+    }
+
+    function isAtDefault(section) {
+        var wanted = [];
+        section.picks.forEach(function (p) { wanted.push(p.card); });
+        return section.cards.every(function (card) {
+            var i = wanted.indexOf(card);
+            return cardQty(card) === (i === -1 ? 0 : section.picks[i].qty);
+        });
+    }
+
+    /** A full-width row at the head of the grid. */
+    function buildDefaults() {
+        state.sections.forEach(function (section) {
+            if (!section.counts || !section.cards.length) { return; }
+
+            section.picks = defaultPicks(section);
+            if (!section.picks.length) { return; }
+
+            var row = makeEl('button', 'ipc-default');
+            row.type = 'button';
+            row.setAttribute('aria-pressed', 'false');
+            row.appendChild(makeEl('span', 'ipc-default__mark'));
+
+            var text = makeEl('span', 'ipc-default__text');
+            text.appendChild(makeEl('span', 'ipc-default__title', STRINGS.defaultTitle));
+            text.appendChild(makeEl('span', 'ipc-default__names',
+                section.picks.map(function (p) {
+                    return String(p.card.name).trim() + (p.qty > 1 ? ' \u00d7' + p.qty : '');
+                }).join(', ')));
+            row.appendChild(text);
+
+            row.addEventListener('click', function () { applyDefaults(section); });
+
+            var grid = section.el.querySelector('.checkbox-container') ||
+                section.el.querySelector('.optionInfobia');
+            if (!grid) { return; }
+
+            grid.insertBefore(row, grid.firstChild);
+            section.defaultRow = row;
+        });
+    }
+
+    function applyDefaults(section) {
+        section.cards.forEach(function (card) {
+            if (!card.input) { return; }
+
+            var qty = 0;
+            section.picks.forEach(function (p) { if (p.card === card) { qty = p.qty; } });
+            var want = qty > 0;
+
+            if (cardQty(card) === qty && card.input.checked === want) { return; }
+
+            if (card.input.type === 'checkbox' && card.input.checked !== want) {
+                card.input.checked = want;
+                dispatch(card.input, 'change');
+            }
+            if (card.qtyInput) {
+                card.qtyInput.value = String(qty);
+                dispatch(card.qtyInput, 'change');
+            }
+        });
+        refresh();
+    }
+
+    /** Fires an event the module's own jQuery handlers will also see. */
+    function dispatch(el, type) {
+        var event;
+        try {
+            event = new Event(type, { bubbles: true });
+        } catch (e) {
+            event = document.createEvent('Event');
+            event.initEvent(type, true, true);
+        }
+        el.dispatchEvent(event);
     }
 
     /* ---------------------------------------------------------------- *
@@ -210,6 +316,11 @@
         });
 
         state.sections.forEach(function (section) {
+            if (section.defaultRow) {
+                var at = isAtDefault(section);
+                section.defaultRow.classList.toggle('is-current', at);
+                section.defaultRow.setAttribute('aria-pressed', at ? 'true' : 'false');
+            }
             if (!section.badgeEl) { return; }
             renderBadge(section, section.cards.reduce(function (sum, card) {
                 return sum + cardQty(card);
@@ -236,12 +347,14 @@
         state.cards = collected.cards;
 
         buildBadges();
+        buildDefaults();
 
         // Quantities are changed by the module's own jQuery handlers, which do
         // not emit native events. Every such change still comes from a user
         // gesture inside the composer, so re-read state just after one.
         ['click', 'change', 'input', 'keyup'].forEach(function (type) {
-            root.addEventListener(type, function () {
+            root.addEventListener(type, function (event) {
+                if (closest(event.target, '.ipc-default')) { return; }
                 window.requestAnimationFrame(refresh);
                 setTimeout(refresh, 180);
             });

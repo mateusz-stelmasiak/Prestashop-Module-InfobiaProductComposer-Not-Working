@@ -1,4 +1,4 @@
-/*! infobia-ux build 2026-09-20d */
+/*! infobia-ux build 2026-09-20e */
 /**
  * Infobia Product Composer - front office helpers.
  *
@@ -91,7 +91,7 @@
 }
 
 .ipc-root .imgattrib {
-    border-width: 2px !important;
+    border-width: 5px !important;
     border-style: solid !important;
     border-color: #e6e6e6 !important;
     border-radius: 0;
@@ -122,5 +122,90 @@
     .ipc-badge,
     .ipc-root .imgattrib {
         transition: none;
+    }
+}
+
+/* ------------------------------------------------------------------ *
+ *  Default row - first in the grid, the full width of it
+ * ------------------------------------------------------------------ */
+
+.ipc-default {
+    flex: 0 0 100%;
+    width: 100%;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin: 0 0 18px;
+    padding: 16px 20px;
+    border: 2px solid #e6e6e6;
+    border-radius: var(--ipc-radius);
+    background: #fff;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color .15s ease;
+}
+
+.ipc-default:hover {
+    border-color: var(--ipc-accent);
+}
+
+.ipc-default__mark {
+    flex: 0 0 auto;
+    position: relative;
+    width: 22px;
+    height: 22px;
+    border: 2px solid #d5d5d5;
+    border-radius: 50%;
+}
+
+.ipc-default.is-current {
+    border-color: var(--ipc-accent);
+}
+
+.ipc-default.is-current .ipc-default__mark {
+    border-color: var(--ipc-accent);
+    background: var(--ipc-accent);
+}
+
+.ipc-default.is-current .ipc-default__mark::after {
+    content: "";
+    position: absolute;
+    left: 6px;
+    top: 2px;
+    width: 5px;
+    height: 10px;
+    border: solid #fff;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+}
+
+.ipc-default__text {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+
+.ipc-default__title {
+    font-weight: 700;
+    color: var(--ipc-ink);
+}
+
+.ipc-default__names {
+    font-size: 13px;
+    color: var(--ipc-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+    .ipc-default {
+        padding: 14px;
+    }
+    .ipc-default__names {
+        white-space: normal;
     }
 }
