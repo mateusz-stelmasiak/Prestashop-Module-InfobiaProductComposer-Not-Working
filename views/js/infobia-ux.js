@@ -2,22 +2,21 @@
  * Infobia Product Composer - front office helpers.
  *
  * A product built with this module can show thirty-odd tiles in one scroll.
- * Three things are genuinely missing from the stock interface, and this file
- * adds those and nothing else:
+ * Two things are missing from the stock interface, and this file adds those
+ * and nothing else:
  *
  *   1. A search box, so a tile can be found without scrolling.
- *   2. A "3 / 7" count on each category, using the same rule the module
- *      validates on add-to-cart - otherwise the shopper only discovers the
- *      problem from an alert after pressing the button.
- *   3. A row that restores the shop's configured selection for a category,
- *      and a note on a tile that has reached its own maximum.
+ *   2. A "3 / 7" count on each category - the same rule the module validates
+ *      on add-to-cart - plus a note on a tile that has hit its own maximum.
+ *      Without it the shopper only learns something is wrong from an alert
+ *      after pressing the button.
  *
  * It layers on top of the existing markup and leaves prices, quantities and
  * cart submission to script_front.js. Without this file the module behaves
  * exactly as before.
  *
- * Styling deliberately inherits the theme's font and colours rather than
- * introducing its own, so the block reads as part of the page.
+ * Styling inherits the theme's typography and surfaces rather than
+ * introducing a second visual language.
  */
 (function () {
     'use strict';
@@ -29,10 +28,7 @@
         noResults: 'Brak pozycji pasujących do',
         showAll: 'Pokaż wszystkie',
         results: 'pasujące pozycje',
-        capped: 'maks.',
-        defaultTitle: 'Zestaw domyślny',
-        defaultApply: 'Wybierz',
-        defaultCurrent: 'Wybrany'
+        capped: 'maks.'
     };
 
     var ROOT_ID = 'divInfobia';
@@ -132,10 +128,6 @@
             childrenEl: null,
             section: null,
             maxQty: stepper ? toInt(stepper.getAttribute('max_attr'), 0) : 0,
-            // Captured before the shopper touches anything, so "default" means
-            // what the shop configured rather than what is on screen now.
-            defaultChecked: input ? !!input.checked : false,
-            defaultQty: input ? toInt(input.getAttribute('default_qte'), 0) : 0,
             templateCapEl: el.querySelector('.max-quantity-text'),
             capEl: null
         };
@@ -155,9 +147,7 @@
             min: toInt(labelEl.getAttribute('min_attr_option'), 0),
             max: toInt(labelEl.getAttribute('max_attr_option'), 0),
             cards: [],
-            badgeEl: null,
-            defaultRow: null,
-            defaultButton: null
+            badgeEl: null
         };
     }
 
@@ -211,18 +201,11 @@
         return { sections: sections, cards: cards };
     }
 
-    /* ---------------------------------------------------------------- *
-     *  Selection state - mirrors what the module validates on submit
-     * ---------------------------------------------------------------- */
-
+    /** Mirrors what the module counts on submit. */
     function cardQty(card) {
         if (!card.input || !card.input.checked) { return 0; }
         if (!card.qtyInput) { return 1; }
         return Math.max(toInt(card.qtyInput.value, 0), 0);
-    }
-
-    function defaultQtyOf(card) {
-        return card.defaultChecked ? (card.defaultQty || 1) : 0;
     }
 
     /* ---------------------------------------------------------------- *
@@ -327,7 +310,7 @@
     }
 
     /* ---------------------------------------------------------------- *
-     *  Category count, per-tile ceiling, default row
+     *  Category count and per-tile ceiling
      * ---------------------------------------------------------------- */
 
     function buildBadges() {
@@ -335,127 +318,6 @@
             if (!section.counts || !section.cards.length) { return; }
             section.badgeEl = makeEl('span', 'ipc-badge');
             section.labelEl.appendChild(section.badgeEl);
-        });
-    }
-
-    /**
-     * What "the default" means for a category.
-     *
-     * If the back office marked attributes as default, that is the answer and
-     * the template has already ticked them. Plenty of categories have nothing
-     * configured, though, and the shopper still deserves a one-click starting
-     * point - so fall back to the first items in the shop's own ordering,
-     * enough of them to satisfy the category minimum.
-     *
-     * @return array of {card, qty}
-     */
-    function defaultPicks(section) {
-        var fromConfig = section.cards.filter(function (card) {
-            return defaultQtyOf(card) > 0;
-        });
-
-        if (fromConfig.length) {
-            return fromConfig.map(function (card) {
-                return { card: card, qty: defaultQtyOf(card) };
-            });
-        }
-
-        var wanted = Math.max(section.min, 1);
-        if (section.max) { wanted = Math.min(wanted, section.max); }
-
-        return section.cards.slice(0, wanted).map(function (card) {
-            return { card: card, qty: card.maxQty ? Math.min(1, card.maxQty) : 1 };
-        });
-    }
-
-    function isAtDefault(section) {
-        var wanted = {};
-        section.picks.forEach(function (pick) {
-            wanted[pick.card.name] = pick.qty;
-        });
-
-        return section.cards.every(function (card) {
-            return cardQty(card) === (wanted[card.name] || 0);
-        });
-    }
-
-    /**
-     * A full-width row at the head of the grid presenting the default as a
-     * choice of its own, selected to begin with.
-     */
-    function buildDefaults() {
-        state.sections.forEach(function (section) {
-            if (!section.counts || !section.cards.length) { return; }
-
-            section.picks = defaultPicks(section);
-            if (!section.picks.length) { return; }
-
-            var row = makeEl('button', 'ipc-default');
-            row.type = 'button';
-            row.setAttribute('aria-pressed', 'false');
-
-            row.appendChild(makeEl('span', 'ipc-default__mark'));
-
-            var text = makeEl('span', 'ipc-default__text');
-            text.appendChild(makeEl('span', 'ipc-default__title', STRINGS.defaultTitle));
-            text.appendChild(makeEl('span', 'ipc-default__names',
-                section.picks.map(function (p) {
-                    return p.qty > 1 ? p.card.name + ' \u00d7' + p.qty : p.card.name;
-                }).join(', ')));
-            row.appendChild(text);
-
-            row.addEventListener('click', function () { applyDefaults(section); });
-
-            var grid = section.el.querySelector('.checkbox-container') ||
-                section.el.querySelector('.optionInfobia');
-            if (!grid) { return; }
-
-            grid.insertBefore(row, grid.firstChild);
-            section.defaultRow = row;
-        });
-    }
-
-    function applyDefaults(section) {
-        var wanted = {};
-        section.picks.forEach(function (pick) {
-            wanted[pick.card.name] = pick.qty;
-        });
-
-        section.cards.forEach(function (card) {
-            if (!card.input) { return; }
-
-            var qty = wanted[card.name] || 0;
-            var shouldCheck = qty > 0;
-
-            if (cardQty(card) === qty && card.input.checked === shouldCheck) { return; }
-
-            if (card.input.type === 'checkbox' && card.input.checked !== shouldCheck) {
-                card.input.checked = shouldCheck;
-                dispatch(card.input, 'change');
-            }
-            if (card.qtyInput) {
-                card.qtyInput.value = String(qty);
-                dispatch(card.qtyInput, 'change');
-            }
-        });
-
-        refresh();
-    }
-
-    /**
-     * Select the default on arrival, for categories the shopper has not
-     * touched. Categories the back office already ticked are left alone -
-     * the template has done the work and re-applying would be a no-op.
-     */
-    function selectDefaultsOnLoad() {
-        state.sections.forEach(function (section) {
-            if (!section.picks || !section.picks.length) { return; }
-
-            var anySelected = section.cards.some(function (card) {
-                return cardQty(card) > 0;
-            });
-
-            if (!anySelected) { applyDefaults(section); }
         });
     }
 
@@ -494,47 +356,29 @@
         });
 
         state.sections.forEach(function (section) {
+            if (!section.badgeEl) { return; }
+
             var picked = section.cards.reduce(function (sum, card) {
                 return sum + cardQty(card);
             }, 0);
 
-            if (section.badgeEl) {
-                var status = 'under';
-                if (section.max && picked > section.max) {
-                    status = 'over';
-                } else if (picked >= section.min && (!section.max || picked <= section.max)) {
-                    status = (picked > 0 || section.min === 0) ? 'ok' : 'under';
-                }
-
-                section.badgeEl.textContent = section.max
-                    ? picked + ' / ' + section.max
-                    : String(picked);
-                section.badgeEl.className = 'ipc-badge ipc-badge--' + status;
+            var status = 'under';
+            if (section.max && picked > section.max) {
+                status = 'over';
+            } else if (picked >= section.min && (!section.max || picked <= section.max)) {
+                status = (picked > 0 || section.min === 0) ? 'ok' : 'under';
             }
 
-            if (section.defaultRow) {
-                var atDefault = isAtDefault(section);
-                section.defaultRow.classList.toggle('is-current', atDefault);
-                section.defaultRow.setAttribute('aria-pressed', atDefault ? 'true' : 'false');
-            }
+            section.badgeEl.textContent = section.max
+                ? picked + ' / ' + section.max
+                : String(picked);
+            section.badgeEl.className = 'ipc-badge ipc-badge--' + status;
         });
     }
 
     /* ---------------------------------------------------------------- *
      *  Wiring
      * ---------------------------------------------------------------- */
-
-    /** Fires an event the module's own jQuery handlers will also see. */
-    function dispatch(el, type) {
-        var event;
-        try {
-            event = new Event(type, { bubbles: true });
-        } catch (e) {
-            event = document.createEvent('Event');
-            event.initEvent(type, true, true);
-        }
-        el.dispatchEvent(event);
-    }
 
     function bind() {
         if (state.els.search) {
@@ -581,9 +425,7 @@
         }
 
         buildBadges();
-        buildDefaults();
         bind();
-        selectDefaultsOnLoad();
         refresh();
     }
 

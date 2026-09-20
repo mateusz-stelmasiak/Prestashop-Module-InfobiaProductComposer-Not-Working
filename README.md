@@ -56,15 +56,12 @@ Also fixed along the way:
 `views/js/infobia-ux.js` and `views/css/infobia-ux.css` add a layer on top of the existing markup. They do not replace it: prices, quantities and cart submission stay owned by `script_front.js`, so behaviour is unchanged.
 
 - **Search** across all tiles, accent-insensitive and tolerant of Polish inflection ("zupa" finds "Zupy").
-- **Live progress per category** — a stem of leaves that fill in as items are picked, with the count alongside: green when the category is satisfied, amber while short, beet when over the limit. It uses the same rule the module validates on add-to-cart, so the shopper no longer finds out only on submit, via an alert.
-- **A default-set row** at the head of each category, full width, restoring the selection the shop configured. The defaults are captured on load, before anything is touched, so they stay recoverable however much the shopper changes.
-- **A per-tile cap notice** — once a tile reaches its own maximum a small "maks. 5" appears beside it, so it is clear why "+" stopped responding.
-- **Selection summary** listing everything picked, with click-to-scroll back to any tile.
-- **Jump links** to each category, with their current counts.
-- **"Only selected"** and **"clear selection"** shortcuts.
-- A visible selected state on the tiles themselves.
+- **A live count per category** - `3 / 7` beside the heading, grey while short, green once the category is satisfied, red when over the limit. It uses the same rule the module validates on add-to-cart, so the shopper no longer discovers the problem only from an alert after pressing the button.
+- **A per-tile ceiling note** - once a tile reaches its own maximum a small "maks. 5" appears beside it, so it is clear why "+" stopped responding.
 
-Visually it is a botanical treatment — pressed-paper cream, sage and clay, a serif for anything that speaks, leaf-shaped geometry and vine rules — to match a shop selling jars of vegetables. All of it is plain CSS and inline SVG: no fonts, images or scripts are fetched.
+That is the whole interface. Typography is inherited from the theme and the
+accent defaults to the shop's green, so the block reads as part of the page
+rather than as a second design. Override `--ipc-accent` to change it.
 
 # FR
 
