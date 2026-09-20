@@ -1,3 +1,4 @@
+/*! infobia-ux build 2026-09-20d */
 /**
  * Infobia Product Composer - front office helpers.
  *
@@ -72,17 +73,16 @@
 }
 
 /* ------------------------------------------------------------------ *
- *  Selected tile
+ *  Selected tile - one border, and only one
  *
- *  A thin green line just inside the photograph. The template already
- *  draws a thick neutral frame around every tile; recolouring the whole
- *  of it shouts, and with five tiles chosen the grid turns into a wall
- *  of green. Leaving that frame alone and marking the inside edge reads
- *  clearly without raising the volume.
+ *  The template draws a thick frame around every photograph inline. Left
+ *  alone it is heavy, and anything added beside it reads as a second
+ *  border. So that frame is thinned to a single hairline for every tile,
+ *  and turning it green is the whole of the selected state: no outline,
+ *  no ring, no badge, nothing layered on top.
  *
- *  outline with a negative offset rather than an inset box-shadow: on a
- *  replaced element an inset shadow paints behind the image and would
- *  not be seen at all.
+ *  !important is needed because the width and colour are set inline by
+ *  displayCheckboxImg.tpl.
  * ------------------------------------------------------------------ */
 
 .ipc-root .infobiaCheckbox,
@@ -91,15 +91,15 @@
 }
 
 .ipc-root .imgattrib {
+    border-width: 2px !important;
+    border-style: solid !important;
+    border-color: #e6e6e6 !important;
     border-radius: 0;
-    outline: 0 solid transparent;
-    outline-offset: -3px;
-    transition: outline-color .15s ease, outline-width .15s ease;
+    transition: border-color .15s ease;
 }
 
 .ipc-root .ipc-selected .imgattrib {
-    outline: 3px solid var(--ipc-accent);
-    outline-offset: -3px;
+    border-color: var(--ipc-accent) !important;
 }
 
 /* ------------------------------------------------------------------ *

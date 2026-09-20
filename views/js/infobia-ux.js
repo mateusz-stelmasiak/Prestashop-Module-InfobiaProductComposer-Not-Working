@@ -21,6 +21,10 @@
         capped: 'maks.'
     };
 
+    /* Stamped onto the composer root, so which build is actually live can
+     * be read straight off the element instead of guessed. */
+    var BUILD = '2026-09-20d';
+
     var ROOT_ID = 'divInfobia';
     var CARD_SELECTOR = '.infobiaCheckbox, .divInfobiaRadio';
 
@@ -224,7 +228,7 @@
         var collected = collect(root);
         if (!collected.cards.length) { return; }
 
-        root.setAttribute('data-ipc-enhanced', '1');
+        root.setAttribute('data-ipc-enhanced', BUILD);
         root.classList.add('ipc-root');
 
         state.root = root;
