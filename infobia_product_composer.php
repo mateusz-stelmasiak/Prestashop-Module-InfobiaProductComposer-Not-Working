@@ -1,18 +1,49 @@
 <?php
-
+/**
+ * Infobia Product Composer - community maintenance build.
+ *
+ * The infobia API went offline on 2023-11-17, which took the original module
+ * with it. This drop-in replacement removes every dependency on that API and,
+ * on top of that:
+ *
+ *  - builds the whole group / option / attribute tree with a fixed, small
+ *    number of SQL queries instead of one query per node (the original issued
+ *    several hundred queries on a product with a few dozen attributes),
+ *  - ships an optional front-office enhancement layer (search, filtering,
+ *    per-group progress, selection summary) that is layered on top of the
+ *    stock markup, so the module's own price/cart JavaScript keeps working,
+ *  - casts and escapes every value that reaches SQL.
+ *
+ * Public method signatures are unchanged so the module's admin controllers,
+ * templates and AJAX endpoints keep working untouched.
+ */
 
 class infobia_product_composer extends Module
 {
+    /** Front-office enhancement assets, relative to the module directory. */
+    const UX_CSS = 'views/css/infobia-ux.css';
+    const UX_JS = 'views/js/infobia-ux.js';
+
     /* @var boolean error */
     protected $error = false;
 
+    /**
+     * Per-request caches. Every one of these used to be a repeated SQL query
+     * executed once per attribute while rendering a single product page.
+     */
+    protected static $apparence_cache = null;
+    protected static $tax_rate_cache = array();
+    protected static $price_display_method = null;
+    protected static $price_round_mode = null;
+    protected static $config_product_cache = array();
+    protected static $name_group_cache = array();
 
     public function __construct()
     {
         $this->name = 'infobia_product_composer';
         $this->tab = 'front_office_features';
 
-        $this->version = '1.2';
+        $this->version = '1.3';
         $this->author = 'Infobia';
         $this->need_instance = 0;
         $this->class_name = 'AdminInfobiaModuleIPC';
@@ -165,13 +196,9 @@ class infobia_product_composer extends Module
                 $output .= $this->displayConfirmation($this->l('Settings updated'));
             }
 
-
-            if (!self::sendCurl('CHECK_KEY')) {
-                $output .= $this->displayError($this->l('Invalid key'));
-            } else {
-                $output .= $this->displayConfirmation($this->l('Licence valide'));
-            }
-
+            // The licence server (infobia-online.com) is gone. Calling it only
+            // stalled this page until cURL timed out and then reported an
+            // invalid key, so the check is deliberately skipped here.
         }
         return $output . $this->displayForm();
     }
@@ -179,53 +206,18 @@ class infobia_product_composer extends Module
 
     public function verificationToken($myModuleName)
     {
-        return $this->sendCurl($key, $site, $module, 'CHECK_KEY');
+        return $this->sendCurl('CHECK_KEY');
     }
 
 
+    /**
+     * The infobia API is permanently offline. This stub keeps the method
+     * available for any caller that still references it while guaranteeing no
+     * outbound request (and therefore no page-long cURL timeout) is made.
+     */
     public function sendCurl($fct)
     {
-
-        $key = Configuration::get('INFOBIA_COMPOSER_KEY');
-        $srv = $_SERVER;
-        $module = $this->name;
-        $url = "https://infobia-online.com/api/sec/?token=infobia";
-
-        $data['key'] = $key;
-        $data['srv'] = $srv;
-        $data['module'] = $module;
-        $data['fct'] = $fct;
-
-        $ch = curl_init($url);
-
-
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-
-        curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.17 (KHTML, like Gecko) Chrome/24.0.1312.52 Safari/537.17');
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
-        curl_setopt($ch, CURLOPT_HEADER, false);
-        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-
-        curl_setopt($ch, CURLOPT_HTTPHEADER, array(
-                "accept: application/json;version=1.0",
-                "cache-control: no-cache",
-                "Content-Type: application/json")
-        );
-
-        // Submit the POST request
-        $result = curl_exec($ch);
-
-        $result = json_decode($result);
-
-
-        curl_close($ch);
-
-
-        return $result;
-
+        return false;
     }
 
     public function displayForm()
@@ -299,6 +291,10 @@ class infobia_product_composer extends Module
         return true;
     }
 
+    /* ------------------------------------------------------------------ *
+     *  Front office hooks
+     * ------------------------------------------------------------------ */
+
     //ajout des js et css dans la partie front office
     public function hookDisplayHeader()
     {
@@ -315,11 +311,34 @@ class infobia_product_composer extends Module
 
                 $this->context->controller->addCSS('https://cdn.datatables.net/1.10.20/css/jquery.dataTables.min.css');
                 $this->context->controller->addJS($this->_path . 'js/jquery.dataTables.min.js', 'all');
+
+                $this->addUxAssets();
             }
         }
         $this->context->controller->addJquery();
 
         $this->context->controller->addJS($this->_path . 'views/js/cart.js', 'all');
+    }
+
+    /**
+     * Registers the optional enhancement layer. Shops that copied only this
+     * PHP file simply keep the stock interface - nothing is registered and
+     * nothing is wrapped.
+     */
+    protected function addUxAssets()
+    {
+        if (!$this->hasUxAssets()) {
+            return;
+        }
+
+        $this->context->controller->addCSS($this->_path . self::UX_CSS, 'all');
+        $this->context->controller->addJS($this->_path . self::UX_JS, 'all');
+    }
+
+    protected function hasUxAssets()
+    {
+        return file_exists(dirname(__FILE__) . '/' . self::UX_CSS)
+            && file_exists(dirname(__FILE__) . '/' . self::UX_JS);
     }
 
     public function hookDisplayBackOfficeHeader()
@@ -340,309 +359,103 @@ class infobia_product_composer extends Module
 
     public function hookDisplayHome($params)
     {
-        global $cookie;
-        $id_lang = $cookie->id_lang;
+        $id_lang = (int)$this->context->language->id;
         $token = Tools::getToken(false);
 
         $ProductHome = $this->getProductHome();
 
-        if (isset($ProductHome['id_product'])) {
-
-            $product = new Product($ProductHome['id_product'], true, $id_lang);
-            $tax_rate = Tax::getProductTaxRate((int)$ProductHome['id_product'], null);
-
-            $priceCalculationMethod = Group::getPriceDisplayMethod(Group::getCurrent()->id);
-
-            if ($priceCalculationMethod == 0) //ttc
-            {
-                $price = Product::getPriceStatic($ProductHome['id_product'], true, null, 6, null, false, false);
-            } else {
-                $price = Product::getPriceStatic($ProductHome['id_product'], false, null, 6, null, false, false);
-            }
-
-
-            $images = Image::getImages((int)$id_lang, $ProductHome['id_product']);
-            $id_image = Product::getCover($ProductHome['id_product']);
-            // get Image by id
-            if (sizeof($id_image) > 0) {
-                $image = new Image($id_image['id_image']);
-                $image_url = _PS_BASE_URL_ . _THEME_PROD_DIR_ . $image->getExistingImgPath() . ".jpg";
-            }
-
-
-            $apparence = $this->getApparence();
-
-            $cur = new currency($cookie->id_currency);
-
-
-            $usetax = true;
-            if ($priceCalculationMethod == 1) {
-                $usetax = false;
-                $showPriceMethod = "HT";
-            }
-            $priceCalculationMethod = Group::getPriceDisplayMethod(Group::getCurrent()->id);
-            $price_without_reduction = Product::getPriceStatic($ProductHome['id_product'], $usetax, $id_product_attribute = null, $decimals = 6, $divisor = null, $only_reduc = false, $usereduc = false);
-
-            $results = array(); // résultat à retourner
-            $options = array();
-
-
-            $prix_attrib = $this->getApparence('prix_attrib');
-            $methodPriceAttr = $prix_attrib[0]['value']; // ttc or ht
-
-
-            $cur = new currency($cookie->id_currency);
-
-
-            $priceCalculationMethod = Group::getPriceDisplayMethod(Group::getCurrent()->id);
-
-
-            $showPriceMethod = "TTC";
-            $usetax = true;
-            if ($priceCalculationMethod == 1) {
-                $usetax = false;
-                $showPriceMethod = "HT";
-            }
-            $tax_rate = Tax::getProductTaxRate((int)$ProductHome['id_product'], null);
-
-            $specific_price = SpecificPrice::getSpecificPrice(
-                (int)$ProductHome['id_product'],
-                1,
-                $cookie->id_currency,
-                Context::getContext()->country->id,
-                Group::getCurrent()->id,
-                1
-            );
-
-            $reduction = "";
-            $reduction_type = "";
-            $reduction_tax = "";
-            if ($specific_price) {
-                $reduction = $specific_price['reduction'];
-                $reduction_type = $specific_price['reduction_type'];
-                $reduction_tax = $specific_price['reduction_tax'];
-
-                if ($reduction_type != "percentage") {
-                    if ($priceCalculationMethod == 1 && $reduction_tax == 1) {
-                        $reduction = $reduction / (1 + ($tax_rate / 100));
-                    }
-
-                    if ($priceCalculationMethod == 0 && $reduction_tax == 0) {
-
-                        $reduction = $reduction + (($reduction * $tax_rate) / 100);
-                    }
-
-
-                }
-            }
-
-
-            /******liste des groupes********/
-            $groupes = $this->getGroups($ProductHome['id_product']);
-            $groupe_option = array();
-            foreach ($groupes as $groupe) {
-                $res = $groupe;
-                $options = $this->getOptions($groupe['id_groupe'], null, $ProductHome['id_product']);
-                foreach ($options as &$option) {
-                    $attributs = $this->getAttributes($option['id_option']);
-                    foreach ($attributs as &$attribut) {
-                        $attribut['hasFils'] = "1";
-
-
-                        if ($priceCalculationMethod == 0 && $methodPriceAttr == "ht") {
-                            $amount = $attribut['prix_attribut'] + (($attribut['prix_attribut'] * $tax_rate) / 100);
-                            $amount = number_format($amount, Configuration::get('PS_PRICE_ROUND_MODE'), '.', '');
-                            $attribut['prix_attribut'] = $amount;
-                        }
-
-                        if ($priceCalculationMethod == 1 && $methodPriceAttr == "ttc") {
-
-                            $amount = $attribut['prix_attribut'] / (1 + ($tax_rate / 100));
-                            $amount = number_format($amount, Configuration::get('PS_PRICE_ROUND_MODE'), '.', '');
-
-                            $attribut['prix_attribut'] = $amount;
-                        }
-
-                        $options_enf = $this->getOptionsAttributes($attribut['id_attribut']);
-                        if (empty($options_enf)) {
-                            $attribut['hasFils'] = "0";
-                        }
-                        $attribut['fils'] = $options_enf;
-                    }
-                    $option['attributs'] = $attributs;
-                }
-                $res['values'] = $options;
-                $results[] = $res;
-            }
-
-            $baseUrl = _PS_BASE_URL_SSL_ . __PS_BASE_URI__;
-            $hide_name_group = $this->getHideNameGroup($ProductHome['id_product']);
-
-            $this->context->smarty->assign(array(
-                'initialprice' => $price,
-                'url_image' => $image_url,
-                'results' => $results,
-                'apparence' => $apparence,
-                'product' => $product,
-                'token' => $token,
-                'baseUrl' => $baseUrl,
-                'currency_symbol' => $cur->symbol,
-                'price_round' => Configuration::get('PS_PRICE_ROUND_MODE'),
-                'module_name' => $this->name,
-                'reduction' => $reduction,
-                'reduction_type' => $reduction_type,
-                'showPriceMethod' => $showPriceMethod,
-                'hide_name_group' => $hide_name_group,
-                'hide_min_max' => $this->getHideMinMax($ProductHome['id_product']),
-                "price_without_reduction" => $price_without_reduction,
-            ));
-
-            return $this->display(__FILE__, 'home_productInfobia.tpl');
+        if (!isset($ProductHome['id_product'])) {
+            return;
         }
+
+        $id_product = (int)$ProductHome['id_product'];
+
+        $product = new Product($id_product, true, $id_lang);
+        $priceCalculationMethod = $this->getPriceDisplayMethod();
+        $usetax = ($priceCalculationMethod != 1);
+        $showPriceMethod = $usetax ? "TTC" : "HT";
+
+        $price = Product::getPriceStatic($id_product, $usetax, null, 6, null, false, false);
+        $price_without_reduction = Product::getPriceStatic($id_product, $usetax, null, 6, null, false, false);
+
+        $image_url = '';
+        $id_image = Product::getCover($id_product);
+        if (is_array($id_image) && isset($id_image['id_image'])) {
+            $image = new Image($id_image['id_image']);
+            $image_url = _PS_BASE_URL_ . _THEME_PROD_DIR_ . $image->getExistingImgPath() . ".jpg";
+        }
+
+        $specific_price = $this->getSpecificPriceForProduct($id_product);
+        $reduction_data = $this->normalizeReduction($specific_price, $id_product, $priceCalculationMethod);
+
+        // The whole group/option/attribute tree, batched.
+        $results = $this->buildComposerTree($id_product);
+
+        $cur = new Currency((int)$this->context->currency->id);
+        $name_group = $this->getNameGroupRow($id_product);
+
+        $this->context->smarty->assign(array(
+            'initialprice' => $price,
+            'url_image' => $image_url,
+            'results' => $results,
+            'apparence' => $this->getApparence(),
+            'product' => $product,
+            'token' => $token,
+            'baseUrl' => _PS_BASE_URL_SSL_ . __PS_BASE_URI__,
+            'currency_symbol' => $cur->symbol,
+            'price_round' => $this->getPriceRoundMode(),
+            'module_name' => $this->name,
+            'reduction' => $reduction_data['reduction'],
+            'reduction_type' => $reduction_data['reduction_type'],
+            'showPriceMethod' => $showPriceMethod,
+            'hide_name_group' => $this->nameGroupField($name_group, 'hide_name_group'),
+            'hide_min_max' => $this->nameGroupField($name_group, 'hide_min_max'),
+            "price_without_reduction" => $price_without_reduction,
+        ));
+
+        return $this->display(__FILE__, 'home_productInfobia.tpl');
     }
 
 
     public function hookDisplayReassurance($params)
     {
-
-        global $cookie;
-        $cur = new currency($cookie->id_currency);
-
-
-        $priceCalculationMethod = Group::getPriceDisplayMethod(Group::getCurrent()->id);
-
-
-        $showPriceMethod = "TTC";
-        $usetax = true;
-        if ($priceCalculationMethod == 1) {
-            $usetax = false;
-            $showPriceMethod = "HT";
+        if (Tools::getValue("controller", "") != "product") {
+            return;
         }
 
-        $tax_rate = Tax::getProductTaxRate((int)Tools::getValue("id_product", 0), null);
-
-        if (Tools::getValue("controller", "") == "product") {
-            $config = $this->getBcConfigProduct();
-            $apparence = $this->getApparence();
-
-
-            $hide_name_group = $this->getHideNameGroup(Tools::getValue("id_product"));
-
-
-            $prix_attrib = $this->getApparence('prix_attrib');
-            $methodPriceAttr = $prix_attrib[0]['value']; // ttc or ht
-            /********/
-            $productId = (int)Tools::getValue('id_product');
-            $product = new Product($productId);
-
-            $results = array(); // résultat à retourner
-            $options = array();
-            if (count($config) > 0) {
-
-                $specific_price = SpecificPrice::getSpecificPrice(
-                    (int)Tools::getValue("id_product"),
-                    1,
-                    $cookie->id_currency,
-                    Context::getContext()->country->id,
-                    Group::getCurrent()->id,
-                    1
-                );
-
-                $reduction = "";
-                $reduction_type = "";
-                if ($specific_price) {
-                    $reduction = $specific_price['reduction'];
-                    $reduction_type = $specific_price['reduction_type'];
-                    $reduction_tax = $specific_price['reduction_tax'];
-
-                    if ($reduction_type != "percentage") {
-                        if ($priceCalculationMethod == 1 && $reduction_tax == 1) {
-                            $reduction = $reduction / (1 + ($tax_rate / 100));
-                        }
-
-                        if ($priceCalculationMethod == 0 && $reduction_tax == 0) {
-
-                            $reduction = $reduction + (($reduction * $tax_rate) / 100);
-                        }
-
-
-                    }
-                }
-
-                /******liste des groupes********/
-                $groupes = $this->getGroups(Tools::getValue("id_product"));
-
-                $groupe_option = array();
-
-                foreach ($groupes as $groupe) {
-                    $res = $groupe;
-                    $options = $this->getOptions($groupe['id_groupe'], null, $productId);
-
-
-                    foreach ($options as &$option) {
-                        $attributs = $this->getAttributes($option['id_option'], $specific_price);
-
-                        foreach ($attributs as &$attribut) {
-                            if ($attribut['gestion_stock'] == 1) {
-                                if ($attribut['qte_stock'] < $attribut['max_attribut']) {
-                                    $attribut['max_attribut'] = $attribut['qte_stock'];
-                                }
-                            }
-                            $attribut['hasFils'] = "1";
-
-
-                            // if price attr HT et l'affichage TTC alors update price
-                            if ($priceCalculationMethod == 0 && $methodPriceAttr == "ht") {
-                                $amount = $attribut['prix_attribut'] + (($attribut['prix_attribut'] * $tax_rate) / 100);
-                                $amount = number_format($amount, Configuration::get('PS_PRICE_ROUND_MODE'), '.', '');
-                                $attribut['prix_attribut'] = $amount;
-                            }
-
-                            if ($priceCalculationMethod == 1 && $methodPriceAttr == "ttc")// boutique ht
-                            {
-                                $amount = $attribut['prix_attribut'] / (1 + ($tax_rate / 100));
-                                $amount = number_format($amount, Configuration::get('PS_PRICE_ROUND_MODE'), '.', '');
-                                $attribut['prix_attribut'] = $amount;
-                            }
-                            $options_enf = $this->getOptionsAttributes($attribut['id_attribut']);
-                            if (empty($options_enf)) {
-                                $attribut['hasFils'] = "0";
-                            }
-
-
-                            $attribut['fils'] = $options_enf;
-
-                        }
-                        $option['attributs'] = $attributs;
-
-                    }
-
-                    $res['values'] = $options;
-                    $results[] = $res;
-
-                }
-                $baseUrl = _PS_BASE_URL_SSL_ . __PS_BASE_URI__;
-                $this->context->smarty->assign(array(
-                    //'initialprice' => $price,
-                    // 'groupes' =>$groupes,
-                    'results' => $results,
-                    'config' => $config,
-                    'apparence' => $apparence,
-                    'currency_symbol' => $cur->symbol,
-                    'baseUrl' => $baseUrl,
-                    'module_name' => $this->name,
-                    'hide_name_group' => $hide_name_group,
-                    'hide_min_max' => $this->getHideMinMax(Tools::getValue("id_product")),
-                    'price_round' => Configuration::get('PS_PRICE_ROUND_MODE'),
-
-                    'reduction' => $reduction,
-                    'reduction_type' => $reduction_type,
-
-                    'url' => Context::getContext()->link->getModuleLink($this->name, 'ajax_module'),
-                ));
-                return $this->display(__FILE__, 'front_infobiaHook_module.tpl');
-            }
+        $config = $this->getBcConfigProduct();
+        if (count($config) == 0) {
+            return;
         }
+
+        $id_product = (int)Tools::getValue('id_product');
+        $priceCalculationMethod = $this->getPriceDisplayMethod();
+
+        $specific_price = $this->getSpecificPriceForProduct($id_product);
+        $reduction_data = $this->normalizeReduction($specific_price, $id_product, $priceCalculationMethod);
+
+        // Single batched build: ~5 queries whatever the size of the tree.
+        $results = $this->buildComposerTree($id_product, $specific_price);
+
+        $cur = new Currency((int)$this->context->currency->id);
+        $name_group = $this->getNameGroupRow($id_product);
+
+        $this->context->smarty->assign(array(
+            'results' => $results,
+            'config' => $config,
+            'apparence' => $this->getApparence(),
+            'currency_symbol' => $cur->symbol,
+            'baseUrl' => _PS_BASE_URL_SSL_ . __PS_BASE_URI__,
+            'module_name' => $this->name,
+            'hide_name_group' => $this->nameGroupField($name_group, 'hide_name_group'),
+            'hide_min_max' => $this->nameGroupField($name_group, 'hide_min_max'),
+            'price_round' => $this->getPriceRoundMode(),
+            'reduction' => $reduction_data['reduction'],
+            'reduction_type' => $reduction_data['reduction_type'],
+            'url' => Context::getContext()->link->getModuleLink($this->name, 'ajax_module'),
+        ));
+
+        return $this->display(__FILE__, 'front_infobiaHook_module.tpl');
     }
 
     public function hookDisplayFooterProduct($params)
@@ -660,301 +473,679 @@ class infobia_product_composer extends Module
 
     public function hookDisplayCartExtraProductActions($params)
     {
-
-
         $controller = Tools::getValue("controller");
 
-        if ($controller == "orderconfirmation" || $controller == "cart") {
-            $id_product = $params['product']['id_product'];
-            $id_customization = $params['product']['id_customization'];
-
-            $id_cart = $this->context->cart->id;
-
-            if ($controller == "orderconfirmation") {
-                $id_cart = Tools::getValue("id_cart");
-            }
-            if ($controller == "cart") {
-                $id_cart = $this->context->cart->id;
-            }
-
-            $InfobiaProd = Db::getInstance()->executeS('SELECT * FROM ' . _DB_PREFIX_ . 'infobia_config_product WHERE id_product = ' . (int)$id_product);
-            // var_dump( $id_customization);die();
-            if ($InfobiaProd && $id_customization > 0 && $id_cart > 0) {
-                $res = Db::getInstance()->executeS('SELECT * from ' . _DB_PREFIX_ . 'infobia_cart where id_product=' . (int)$id_product . ' and id_cart=' . (int)$id_cart . " and id_customization=" . (int)$id_customization);
-
-
-                if (count($res) > 0) {
-
-                    if (!empty($res[0]['attributes'])) {
-
-                        $attributes = $res[0]['attributes'];
-
-                        $attributes = json_decode($attributes);
-
-                        $this->context->smarty->assign(array(
-                                'res' => $res,
-                                'attributes' => $attributes,
-                                'urlUploads' => _PS_BASE_URL_SSL_ . __PS_BASE_URI__ . "modules/" . $this->name . "/uploads/",
-                                'controller' => $controller,
-                                'id_product' => $id_product,
-                                'id_customization' => $id_customization,
-                            )
-                        );
-
-
-                        return $this->display(__FILE__, 'displayCartExtraProductActions.tpl');
-                    }
-                }
-            }
+        if ($controller != "orderconfirmation" && $controller != "cart") {
+            return;
         }
+
+        $id_product = (int)$params['product']['id_product'];
+        $id_customization = (int)$params['product']['id_customization'];
+
+        if ($controller == "orderconfirmation") {
+            $id_cart = (int)Tools::getValue("id_cart");
+        } else {
+            $id_cart = (int)$this->context->cart->id;
+        }
+
+        if ($id_customization <= 0 || $id_cart <= 0) {
+            return;
+        }
+
+        $InfobiaProd = $this->getBcConfigProducts($id_product);
+        if (!$InfobiaProd) {
+            return;
+        }
+
+        $res = Db::getInstance()->executeS(
+            'SELECT * FROM `' . _DB_PREFIX_ . 'infobia_cart`
+             WHERE id_product = ' . (int)$id_product . '
+               AND id_cart = ' . (int)$id_cart . '
+               AND id_customization = ' . (int)$id_customization
+        );
+
+        if (empty($res) || empty($res[0]['attributes'])) {
+            return;
+        }
+
+        $this->context->smarty->assign(array(
+            'res' => $res,
+            'attributes' => json_decode($res[0]['attributes']),
+            'urlUploads' => _PS_BASE_URL_SSL_ . __PS_BASE_URI__ . "modules/" . $this->name . "/uploads/",
+            'controller' => $controller,
+            'id_product' => $id_product,
+            'id_customization' => $id_customization,
+        ));
+
+        return $this->display(__FILE__, 'displayCartExtraProductActions.tpl');
     }
 
     public function hookDisplayProductPriceBlock($params)
     {
-
         return $this->hookDisplayCartExtraProductActions($params);
     }
 
     public function hookDisplayProductActions($params)
     {
-        if (isset($_POST['action']) && $_POST['action'] == 'quickview') {
-            $id_product = $_POST['id_product'];
+        if (Tools::getValue('action') == 'quickview') {
+            $id_product = (int)Tools::getValue('id_product');
             $config = $this->getBcConfigProducts($id_product);
 
             if ($config) {
-                $apparence = Db::getInstance()->executeS('SELECT * FROM `' . _DB_PREFIX_ . 'infobia_config` ');
                 $this->context->smarty->assign(array(
-
                     'link' => $this->context->link->getProductLink($id_product),
-                    'apparence' => $apparence,
+                    'apparence' => $this->getApparence(),
                     'prod_id' => $id_product
-
                 ));
                 return $this->display(__FILE__, 'listing.tpl');
             }
         }
-
     }
 
+    /* ------------------------------------------------------------------ *
+     *  Batched tree building
+     *
+     *  The original code walked the tree node by node: one query per group,
+     *  one per option, one per attribute, then - for every single attribute -
+     *  another getOptionsAttributes() call that itself issued two queries per
+     *  child option plus two configuration lookups. A product with five
+     *  groups and thirty attributes cost well over two hundred queries.
+     *
+     *  buildComposerTree() fetches the tree one *level* at a time, so the
+     *  cost is five queries (groups, options, attributes, child options,
+     *  child attributes) no matter how many nodes there are.
+     * ------------------------------------------------------------------ */
 
-    public function getHideNameGroup($id_product)
+    /**
+     * @param int $id_product
+     * @param array|false $specific_price applied to first-level attributes only,
+     *                                    matching the historical behaviour.
+     * @return array groups, each with ['values' => options[['attributs' => [...]]]]
+     */
+    protected function buildComposerTree($id_product, $specific_price = array())
     {
-        $sql = 'SELECT `hide_name_group` FROM`' . _DB_PREFIX_ . 'infobia_name_group`  
-           WHERE id_product=' . $id_product;
-        $hide_group_name = Db::getInstance()->executeS($sql);
-        if (!empty($hide_group_name)) {
-            return $hide_group_name[0];
+        $id_product = (int)$id_product;
+
+        $groups = $this->getGroups($id_product);
+        if (empty($groups)) {
+            return array();
+        }
+
+        $group_ids = array();
+        foreach ($groups as $group) {
+            $group_ids[] = (int)$group['id_groupe'];
+        }
+
+        // Level 1: every option of every group, in one query.
+        $options_by_group = $this->fetchOptionsByGroups($id_product, $group_ids);
+
+        $option_ids = array();
+        foreach ($options_by_group as $options) {
+            foreach ($options as $option) {
+                $option_ids[] = (int)$option['id_option'];
+            }
+        }
+
+        // Level 2: every attribute of every option, in one query.
+        $attributes_by_option = $this->fetchAttributesByOptions($option_ids, $specific_price, $id_product);
+        $this->postProcessAttributes($attributes_by_option, $id_product);
+
+        $attribute_ids = array();
+        foreach ($attributes_by_option as $attributes) {
+            foreach ($attributes as $attribute) {
+                $attribute_ids[] = (int)$attribute['id_attribut'];
+            }
+        }
+
+        // Level 3 + 4: child options and their attributes, one query each.
+        $child_options_by_attribute = $this->fetchChildOptionsByAttributes($attribute_ids);
+
+        $child_option_ids = array();
+        foreach ($child_options_by_attribute as $child_options) {
+            foreach ($child_options as $child_option) {
+                $child_option_ids[] = (int)$child_option['id_option'];
+            }
+        }
+
+        $child_attributes_by_option = $this->fetchAttributesByOptions($child_option_ids);
+        $this->postProcessAttributes($child_attributes_by_option, $id_product);
+
+        // Assemble, without a single further query.
+        $results = array();
+        foreach ($groups as $group) {
+            $id_groupe = (int)$group['id_groupe'];
+            $options = isset($options_by_group[$id_groupe]) ? $options_by_group[$id_groupe] : array();
+
+            foreach ($options as $option_index => $option) {
+                $id_option = (int)$option['id_option'];
+                $attributes = isset($attributes_by_option[$id_option]) ? $attributes_by_option[$id_option] : array();
+
+                foreach ($attributes as $attribute_index => $attribute) {
+                    $id_attribut = (int)$attribute['id_attribut'];
+                    $children = isset($child_options_by_attribute[$id_attribut])
+                        ? $child_options_by_attribute[$id_attribut]
+                        : array();
+
+                    foreach ($children as $child_index => $child_option) {
+                        $id_child_option = (int)$child_option['id_option'];
+                        $child_attributes = isset($child_attributes_by_option[$id_child_option])
+                            ? $child_attributes_by_option[$id_child_option]
+                            : array();
+
+                        foreach ($child_attributes as $child_attribute_index => $child_attribute) {
+                            $child_attributes[$child_attribute_index]['hasFils'] = "0";
+                        }
+
+                        $children[$child_index]['attributs'] = $child_attributes;
+                    }
+
+                    $attributes[$attribute_index]['hasFils'] = empty($children) ? "0" : "1";
+                    $attributes[$attribute_index]['fils'] = $children;
+                }
+
+                $options[$option_index]['attributs'] = $attributes;
+            }
+
+            $group['values'] = $options;
+            $results[] = $group;
+        }
+
+        return $results;
+    }
+
+    /**
+     * Stock clamping and HT/TTC conversion, applied once per attribute row
+     * instead of once per place the row is rendered.
+     *
+     * @param array $attributes_by_option modified in place
+     */
+    protected function postProcessAttributes(&$attributes_by_option, $id_product)
+    {
+        if (empty($attributes_by_option)) {
+            return;
+        }
+
+        $price_display_method = $this->getPriceDisplayMethod();
+        $method_price_attr = $this->getApparenceValue('prix_attrib', 'ttc');
+        $tax_rate = $this->getTaxRate($id_product);
+
+        foreach ($attributes_by_option as $id_option => $attributes) {
+            foreach ($attributes as $index => $attribute) {
+                if (isset($attribute['gestion_stock']) && $attribute['gestion_stock'] == 1
+                    && $attribute['qte_stock'] < $attribute['max_attribut']) {
+                    $attributes[$index]['max_attribut'] = $attribute['qte_stock'];
+                }
+
+                $attributes[$index]['prix_attribut'] = $this->convertAttributePrice(
+                    $attribute['prix_attribut'],
+                    $price_display_method,
+                    $method_price_attr,
+                    $tax_rate
+                );
+            }
+            $attributes_by_option[$id_option] = $attributes;
+        }
+    }
+
+    /**
+     * Converts an attribute price between the price it was entered in and the
+     * one the shop displays. Kept bit-for-bit identical to the original
+     * arithmetic, including using PS_PRICE_ROUND_MODE as a decimal count.
+     */
+    protected function convertAttributePrice($price, $price_display_method, $method_price_attr, $tax_rate)
+    {
+        if ($price_display_method == 0 && $method_price_attr == "ht") {
+            $amount = $price + (($price * $tax_rate) / 100);
+        } elseif ($price_display_method == 1 && $method_price_attr == "ttc") {
+            $amount = $price / (1 + ($tax_rate / 100));
         } else {
+            return $price;
+        }
+
+        return number_format($amount, (int)$this->getPriceRoundMode(), '.', '');
+    }
+
+    /**
+     * All options of the given groups for one product. Replaces one query per
+     * group. Returns [id_groupe => option rows].
+     */
+    protected function fetchOptionsByGroups($id_product, array $group_ids)
+    {
+        $group_ids = $this->sanitizeIds($group_ids);
+        if (empty($group_ids)) {
+            return array();
+        }
+
+        $sql = 'SELECT icp.*, io.*, icp.id_groupe AS ipc_group_key
+                FROM `' . _DB_PREFIX_ . 'infobia_config_product` icp
+                INNER JOIN `' . _DB_PREFIX_ . 'infobia_option` io ON icp.id_option = io.id_option
+                WHERE icp.id_product = ' . (int)$id_product . '
+                  AND icp.id_groupe IN (' . implode(',', $group_ids) . ')
+                ORDER BY io.position_option';
+
+        return $this->groupRowsBy(Db::getInstance()->executeS($sql), 'ipc_group_key');
+    }
+
+    /**
+     * All child options of the given attributes. Replaces one query per
+     * attribute. Returns [id_attribut => option rows].
+     */
+    protected function fetchChildOptionsByAttributes(array $attribute_ids)
+    {
+        $attribute_ids = $this->sanitizeIds($attribute_ids);
+        if (empty($attribute_ids)) {
+            return array();
+        }
+
+        $sql = 'SELECT iaoe.*, io.*, iaoe.id_attribut AS ipc_attribute_key
+                FROM `' . _DB_PREFIX_ . 'infobia_attribut_option_enfant` iaoe
+                INNER JOIN `' . _DB_PREFIX_ . 'infobia_option` io ON iaoe.id_option = io.id_option
+                WHERE iaoe.id_attribut IN (' . implode(',', $attribute_ids) . ')
+                ORDER BY io.position_option';
+
+        return $this->groupRowsBy(Db::getInstance()->executeS($sql), 'ipc_attribute_key');
+    }
+
+    /**
+     * All sellable attributes of the given options. Replaces one query per
+     * option. Returns [id_opt => attribute rows].
+     */
+    protected function fetchAttributesByOptions(array $option_ids, $specific_price = array(), $id_product = 0)
+    {
+        $option_ids = $this->sanitizeIds($option_ids);
+        if (empty($option_ids)) {
+            return array();
+        }
+
+        $sql = 'SELECT * FROM `' . _DB_PREFIX_ . 'infobia_attributs`
+                WHERE id_opt IN (' . implode(',', $option_ids) . ')
+                  AND IF(gestion_stock = 0, true, (qte_stock >= min_attribut AND qte_stock > 0))
+                  AND active = 1
+                ORDER BY position_attribut';
+
+        $rows = Db::getInstance()->executeS($sql);
+        if (!is_array($rows)) {
+            return array();
+        }
+
+        $this->applySpecificPrice($rows, $specific_price, $id_product);
+
+        return $this->groupRowsBy($rows, 'id_opt', false);
+    }
+
+    /**
+     * Applies a PrestaShop specific price to composer attribute prices,
+     * when the module is configured to do so.
+     *
+     * @param array $rows modified in place
+     */
+    protected function applySpecificPrice(&$rows, $specific_price, $id_product)
+    {
+        if (empty($specific_price) || !is_array($specific_price)) {
+            return;
+        }
+        if ($this->getApparenceValue('apply_reduct_ps', 0) != 1) {
+            return;
+        }
+
+        $tax_rate = $this->getTaxRate($id_product);
+        $reduction_type = isset($specific_price['reduction_type']) ? $specific_price['reduction_type'] : '';
+        $reduction_tax = isset($specific_price['reduction_tax']) ? $specific_price['reduction_tax'] : 0;
+        $method_price_attr = $this->getApparenceValue('prix_attrib', 'ttc');
+
+        foreach ($rows as $index => $row) {
+            $reduction = $specific_price['reduction'];
+
+            $rows[$index]['price_without_reduction'] = (float)$row['prix_attribut'];
+
+            if ($reduction_type == "percentage") {
+                $rows[$index]['prix_attribut'] = $row['prix_attribut'] - ($row['prix_attribut'] * $reduction);
+            }
+
+            if ($reduction_type == "amount") {
+                if ($method_price_attr == "ht" && $reduction_tax == 1) {
+                    $reduction = $reduction - (float)($reduction * $tax_rate) / 100;
+                }
+                if ($method_price_attr == "ttc" && $reduction_tax == 0) {
+                    $reduction = $reduction + (float)($reduction * $tax_rate) / 100;
+                }
+
+                $rows[$index]['prix_attribut'] = $row['prix_attribut'] - (float)$reduction;
+            }
+        }
+    }
+
+    /**
+     * Groups result rows by a column, optionally dropping that column from the
+     * returned rows (used for the join keys this class adds internally, so
+     * templates keep seeing exactly the columns they used to).
+     */
+    protected function groupRowsBy($rows, $key, $unset_key = true)
+    {
+        $grouped = array();
+        if (!is_array($rows)) {
+            return $grouped;
+        }
+
+        foreach ($rows as $row) {
+            if (!isset($row[$key])) {
+                continue;
+            }
+            $bucket = (int)$row[$key];
+            if ($unset_key) {
+                unset($row[$key]);
+            }
+            $grouped[$bucket][] = $row;
+        }
+
+        return $grouped;
+    }
+
+    /** @return int[] unique, positive, integer-cast ids */
+    protected function sanitizeIds(array $ids)
+    {
+        $clean = array();
+        foreach ($ids as $id) {
+            $id = (int)$id;
+            if ($id > 0) {
+                $clean[$id] = $id;
+            }
+        }
+
+        return array_values($clean);
+    }
+
+    /** The product's active specific price, or false. */
+    protected function getSpecificPriceForProduct($id_product)
+    {
+        return SpecificPrice::getSpecificPrice(
+            (int)$id_product,
+            (int)$this->context->shop->id,
+            (int)$this->context->currency->id,
+            (int)Context::getContext()->country->id,
+            (int)Group::getCurrent()->id,
+            1
+        );
+    }
+
+    /**
+     * Turns a specific price into the {reduction, reduction_type} pair the
+     * templates expect, converting the amount between HT and TTC when the
+     * shop displays prices the other way round.
+     */
+    protected function normalizeReduction($specific_price, $id_product, $price_display_method)
+    {
+        $result = array('reduction' => "", 'reduction_type' => "");
+
+        if (empty($specific_price) || !is_array($specific_price)) {
+            return $result;
+        }
+
+        $reduction = $specific_price['reduction'];
+        $reduction_type = $specific_price['reduction_type'];
+        $reduction_tax = $specific_price['reduction_tax'];
+
+        if ($reduction_type != "percentage") {
+            $tax_rate = $this->getTaxRate($id_product);
+
+            if ($price_display_method == 1 && $reduction_tax == 1) {
+                $reduction = $reduction / (1 + ($tax_rate / 100));
+            }
+
+            if ($price_display_method == 0 && $reduction_tax == 0) {
+                $reduction = $reduction + (($reduction * $tax_rate) / 100);
+            }
+        }
+
+        $result['reduction'] = $reduction;
+        $result['reduction_type'] = $reduction_type;
+
+        return $result;
+    }
+
+    /* ------------------------------------------------------------------ *
+     *  Data access - public signatures preserved, now cached and escaped
+     * ------------------------------------------------------------------ */
+
+    /** The infobia_name_group row for a product, fetched at most once. */
+    protected function getNameGroupRow($id_product)
+    {
+        $id_product = (int)$id_product;
+
+        if (!array_key_exists($id_product, self::$name_group_cache)) {
+            $rows = Db::getInstance()->executeS(
+                'SELECT * FROM `' . _DB_PREFIX_ . 'infobia_name_group` WHERE id_product = ' . $id_product
+            );
+            self::$name_group_cache[$id_product] = (is_array($rows) && !empty($rows)) ? $rows[0] : array();
+        }
+
+        return self::$name_group_cache[$id_product];
+    }
+
+    /** Mirrors the single-column shape the templates expect. */
+    protected function nameGroupField($row, $field)
+    {
+        if (empty($row) || !isset($row[$field])) {
             return "";
         }
 
+        return array($field => $row[$field]);
+    }
+
+    public function getHideNameGroup($id_product)
+    {
+        return $this->nameGroupField($this->getNameGroupRow($id_product), 'hide_name_group');
     }
 
     public function getHideMinMax($id_product)
     {
-        $sql = 'SELECT `hide_min_max` FROM`' . _DB_PREFIX_ . 'infobia_name_group`  
-           WHERE id_product=' . $id_product;
-        $hide_min_max = Db::getInstance()->executeS($sql);
-        if (!empty($hide_min_max)) {
-            return $hide_min_max[0];
-        } else {
-            return "";
-        }
+        return $this->nameGroupField($this->getNameGroupRow($id_product), 'hide_min_max');
     }
 
     public function getGroups($id_product)
     {
-
-//        eval($this->sendCurl('GGF'));
-//        return $groupes;
-
+        // The original hard-coded the `ps_` table prefix here, which broke any
+        // shop installed with a custom prefix.
         $sql = 'SELECT g.*
-FROM ps_infobia_groupe AS g
-INNER JOIN ps_infobia_config_product AS cp ON g.id_groupe = cp.id_groupe
-where cp.id_product =' . $id_product;
+                FROM `' . _DB_PREFIX_ . 'infobia_groupe` AS g
+                INNER JOIN `' . _DB_PREFIX_ . 'infobia_config_product` AS cp ON g.id_groupe = cp.id_groupe
+                WHERE cp.id_product = ' . (int)$id_product;
+
         $res = Db::getInstance()->executeS($sql);
 
-        return ($res);
+        return is_array($res) ? $res : array();
     }
 
     public function getBcConfigProduct()
     {
-
-        global $cookie;
-
-        $res = array();
-        if (isset($_GET['id_product'])) {
-            $sql = 'SELECT * FROM `' . _DB_PREFIX_ . 'infobia_config_product` where id_product =' . (int)$_GET['id_product'];
-
-            $res = Db::getInstance()->executeS($sql);
-
-
+        if (!isset($_GET['id_product'])) {
+            return array();
         }
 
-        return $res;
-
+        return $this->getBcConfigProducts((int)$_GET['id_product']);
     }
 
     public function getBcConfigProducts($id)
     {
+        $id = (int)$id;
 
-        $sql = 'SELECT * FROM `' . _DB_PREFIX_ . 'infobia_config_product` where id_product =' . $id;
-        $res = Db::getInstance()->executeS($sql);
+        if (!array_key_exists($id, self::$config_product_cache)) {
+            $res = Db::getInstance()->executeS(
+                'SELECT * FROM `' . _DB_PREFIX_ . 'infobia_config_product` WHERE id_product = ' . $id
+            );
+            self::$config_product_cache[$id] = is_array($res) ? $res : array();
+        }
 
-        return ($res);
+        return self::$config_product_cache[$id];
     }
-
 
     public function getGroupes()
     {
-        $sql = 'SELECT * FROM `' . _DB_PREFIX_ . 'infobia_groupe` order by id_groupe desc ';
-        return $data = Db::getInstance()->executeS($sql);
+        $sql = 'SELECT * FROM `' . _DB_PREFIX_ . 'infobia_groupe` ORDER BY id_groupe DESC';
+        return Db::getInstance()->executeS($sql);
     }
 
     public function getOptions($id_groupe = null, $id_attrib = null, $id_product = null)
     {
-
         if ($id_groupe) {
-
-            $sql = 'SELECT * FROM`' . _DB_PREFIX_ . 'infobia_config_product`  icp ,`' . _DB_PREFIX_ . 'infobia_option` io   WHERE icp.id_product=' . $id_product . ' and icp.id_groupe=' . $id_groupe . " and icp.id_option=io.id_option order by io.position_option";
+            $sql = 'SELECT icp.*, io.*
+                    FROM `' . _DB_PREFIX_ . 'infobia_config_product` icp
+                    INNER JOIN `' . _DB_PREFIX_ . 'infobia_option` io ON icp.id_option = io.id_option
+                    WHERE icp.id_product = ' . (int)$id_product . '
+                      AND icp.id_groupe = ' . (int)$id_groupe . '
+                    ORDER BY io.position_option';
         } elseif ($id_attrib) {
-            $sql = 'SELECT * FROM`' . _DB_PREFIX_ . 'infobia_attribut_option_enfant`  iaoe ,`' . _DB_PREFIX_ . 'infobia_option` io   WHERE iaoe.id_option=io.id_option and iaoe.id_attribut=' . $id_attrib . " order by io.position_option";
-
+            $sql = 'SELECT iaoe.*, io.*
+                    FROM `' . _DB_PREFIX_ . 'infobia_attribut_option_enfant` iaoe
+                    INNER JOIN `' . _DB_PREFIX_ . 'infobia_option` io ON iaoe.id_option = io.id_option
+                    WHERE iaoe.id_attribut = ' . (int)$id_attrib . '
+                    ORDER BY io.position_option';
         } else {
-            $sql = 'SELECT * FROM `' . _DB_PREFIX_ . 'infobia_option` order by id_option desc ';
+            $sql = 'SELECT * FROM `' . _DB_PREFIX_ . 'infobia_option` ORDER BY id_option DESC';
         }
-        return $data = Db::getInstance()->executeS($sql);
+
+        return Db::getInstance()->executeS($sql);
     }
 
-
+    /**
+     * Kept for callers outside this class (AJAX controller, admin screens).
+     * The front-office render path no longer uses it - buildComposerTree()
+     * resolves the same data for the whole page in two queries instead of two
+     * per attribute.
+     */
     public function getOptionsAttributes($id_attrib)
     {
+        $id_product = (int)Tools::getValue('id_product', 0);
 
-
-        $prix_attrib = $this->getApparence('prix_attrib');
-        $methodPriceAttr = $prix_attrib[0]['value']; // ttc or ht
-
-        $options = $this->getOptions(null, $id_attrib);
-
-        $priceCalculationMethod = Group::getPriceDisplayMethod(Group::getCurrent()->id);
-        $tax_rate = Tax::getProductTaxRate((int)Tools::getValue("id_product", 0), null);
-
-        foreach ($options as &$option) {
-            $attributs = $this->getAttributes($option['id_option']);
-
-            foreach ($attributs as &$attribut) {
-                if ($attribut['gestion_stock'] == 1) {
-                    if ($attribut['qte_stock'] < $attribut['max_attribut']) {
-                        $attribut['max_attribut'] = $attribut['qte_stock'];
-                    }
-                }
-                if ($priceCalculationMethod == 0 && $methodPriceAttr == "ht") {
-                    $amount = $attribut['prix_attribut'] + (($attribut['prix_attribut'] * $tax_rate) / 100);
-                    $amount = number_format($amount, Configuration::get('PS_PRICE_ROUND_MODE'), '.', '');
-                    $attribut['prix_attribut'] = $amount;
-                }
-                if ($priceCalculationMethod == 1 && $methodPriceAttr == "ttc") {
-                    $amount = $attribut['prix_attribut'] / (1 + ($tax_rate / 100));
-                    $amount = number_format($amount, Configuration::get('PS_PRICE_ROUND_MODE'), '.', '');
-                    $attribut['prix_attribut'] = $amount;
-                }
-
-
-                $attribut['hasFils'] = "0";
-            }
-            $option['attributs'] = $attributs;
-
+        $options_by_attribute = $this->fetchChildOptionsByAttributes(array((int)$id_attrib));
+        $options = isset($options_by_attribute[(int)$id_attrib]) ? $options_by_attribute[(int)$id_attrib] : array();
+        if (empty($options)) {
+            return array();
         }
+
+        $option_ids = array();
+        foreach ($options as $option) {
+            $option_ids[] = (int)$option['id_option'];
+        }
+
+        $attributes_by_option = $this->fetchAttributesByOptions($option_ids);
+        $this->postProcessAttributes($attributes_by_option, $id_product);
+
+        foreach ($options as $index => $option) {
+            $id_option = (int)$option['id_option'];
+            $attributes = isset($attributes_by_option[$id_option]) ? $attributes_by_option[$id_option] : array();
+
+            foreach ($attributes as $attribute_index => $attribute) {
+                $attributes[$attribute_index]['hasFils'] = "0";
+            }
+
+            $options[$index]['attributs'] = $attributes;
+        }
+
         return $options;
     }
 
-
     public function getAttributes($id_opt = null, $specific_price = array())
     {
-
-
         if ($id_opt) {
-            $sql = 'SELECT * FROM`' . _DB_PREFIX_ . 'infobia_attributs` WHERE id_opt=' . $id_opt . " and if(gestion_stock = 0 , true ,(qte_stock>=min_attribut and qte_stock>0)) and active=1 order by position_attribut";
-        } else {
-            $sql = 'SELECT * FROM `' . _DB_PREFIX_ . 'infobia_attributs` order by id_attribut desc ';
+            $id_opt = (int)$id_opt;
+            $attributes = $this->fetchAttributesByOptions(
+                array($id_opt),
+                $specific_price,
+                (int)Tools::getValue('id_product', 0)
+            );
+
+            return isset($attributes[$id_opt]) ? $attributes[$id_opt] : array();
         }
-        $apply_reduct_ps = $this->getApparence("apply_reduct_ps");
-        $reduction = "";
-        $reduction_type = "";
-        $datas = Db::getInstance()->executeS($sql);
-        if ($apply_reduct_ps[0]['value'] == 1) {
-            if ($specific_price) {
-                $tax_rate = Tax::getProductTaxRate((int)Tools::getValue('id_product'), null);
 
-                foreach ($datas as &$data) {
-                    $reduction = $specific_price['reduction'];
-                    $reduction_type = $specific_price['reduction_type'];
-                    $reduction_tax = $specific_price['reduction_tax'];
-
-
-                    $data['price_without_reduction'] = (float)$data['prix_attribut'];
-                    if ($reduction_type == "percentage") {
-
-                        $price_with_reduction = $data['prix_attribut'] - ($data['prix_attribut'] * $reduction);
-                        $data['prix_attribut'] = $price_with_reduction;
-                    }
-                    if ($reduction_type == "amount") {
-                        $prix_attrib = $this->getApparence('prix_attrib');
-                        $methodPriceAttr = $prix_attrib[0]['value']; // ttc or ht
-
-                        if ($methodPriceAttr == "ht" && $reduction_tax == 1)//ht
-                        {
-
-                            $reduction = $reduction - (float)($reduction * $tax_rate) / 100;
-                        }
-                        if ($methodPriceAttr == "ttc" && $reduction_tax == 0)//ht
-                        {
-
-                            $reduction = $reduction + (float)($reduction * $tax_rate) / 100;
-
-                        }
-
-                        $data['prix_attribut'] = $data['prix_attribut'] - (float)$reduction;
-                    }
-
-                }
-
-            }
-        }
-        return $datas;
+        return Db::getInstance()->executeS(
+            'SELECT * FROM `' . _DB_PREFIX_ . 'infobia_attributs` ORDER BY id_attribut DESC'
+        );
     }
 
     public function getConfigProduct($product_id)
     {
-        $data = Db::getInstance()->executeS('SELECT * FROM `' . _DB_PREFIX_ . 'infobia_config_product` where id_product=' . $product_id);
         $groupe_config = array();
-        foreach ($data as $groupe) {
+        foreach ($this->getBcConfigProducts($product_id) as $groupe) {
             $groupe_config[] = $groupe['id_groupe'];
         }
 
         return $groupe_config;
     }
 
+    /**
+     * The whole infobia_config table is read once per request and filtered in
+     * PHP. The original ran a query for every lookup, and there was at least
+     * one lookup per attribute rendered.
+     */
     public function getApparence($name = "")
     {
-        $sql = 'SELECT * FROM `' . _DB_PREFIX_ . 'infobia_config` order by id';
-
-        if ($name != "") {
-            $sql = 'SELECT * FROM `' . _DB_PREFIX_ . 'infobia_config` where name="' . $name . '"';
+        if (self::$apparence_cache === null) {
+            $rows = Db::getInstance()->executeS(
+                'SELECT * FROM `' . _DB_PREFIX_ . 'infobia_config` ORDER BY id'
+            );
+            self::$apparence_cache = is_array($rows) ? $rows : array();
         }
 
-        $data = Db::getInstance()->executeS($sql);
-        return $data;
+        if ($name === "") {
+            return self::$apparence_cache;
+        }
+
+        $matches = array();
+        foreach (self::$apparence_cache as $row) {
+            if (isset($row['name']) && $row['name'] === $name) {
+                $matches[] = $row;
+            }
+        }
+
+        return $matches;
+    }
+
+    /** Null-safe single setting lookup. */
+    public function getApparenceValue($name, $default = null)
+    {
+        $rows = $this->getApparence($name);
+
+        return isset($rows[0]['value']) ? $rows[0]['value'] : $default;
     }
 
     public function getProductHome()
     {
-        $data = Db::getInstance()->executeS('SELECT `id_product` FROM `' . _DB_PREFIX_ . 'infobia_name_group` where show_in_home=1');
-        if ($data) {
-            return $data[0];
+        $data = Db::getInstance()->executeS(
+            'SELECT `id_product` FROM `' . _DB_PREFIX_ . 'infobia_name_group` WHERE show_in_home = 1'
+        );
+
+        return $data ? $data[0] : array();
+    }
+
+    /* ---- cached PrestaShop lookups ---- */
+
+    protected function getTaxRate($id_product)
+    {
+        $id_product = (int)$id_product;
+
+        if (!array_key_exists($id_product, self::$tax_rate_cache)) {
+            self::$tax_rate_cache[$id_product] = Tax::getProductTaxRate($id_product, null);
         }
-        return array();
+
+        return self::$tax_rate_cache[$id_product];
+    }
+
+    protected function getPriceDisplayMethod()
+    {
+        if (self::$price_display_method === null) {
+            self::$price_display_method = Group::getPriceDisplayMethod(Group::getCurrent()->id);
+        }
+
+        return self::$price_display_method;
+    }
+
+    protected function getPriceRoundMode()
+    {
+        if (self::$price_round_mode === null) {
+            self::$price_round_mode = Configuration::get('PS_PRICE_ROUND_MODE');
+        }
+
+        return self::$price_round_mode;
     }
 }
-
-?>
