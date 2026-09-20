@@ -57,7 +57,7 @@ Also fixed along the way:
 
 - **A live count per category** - `3 / 7` beside the heading, set as type rather than as a chip: grey while the category is short, green once it is satisfied, red when it is over. It uses the same rule the module validates on add-to-cart, so the shopper no longer discovers the problem only from an alert after pressing the button.
 - **A per-tile ceiling note** - once a tile reaches its own maximum a small "maks. 5" appears beside it, so it is clear why "+" stopped responding.
-- **A chosen tile takes a green frame around its photograph**, the same mark the shop already uses on the gift tiles, rather than inventing a highlight of its own.
+- **A chosen tile takes a thin green line just inside its photograph.** The template already draws a thick neutral frame around every tile; recolouring the whole of it turns a filled category into a wall of green, so the outer frame is left alone and the inside edge carries the mark.
 - **The sticky bottom bar is hidden.** It repeated the price and add-to-cart already on the page. It is hidden rather than removed from the template on purpose: `#quantity_wanted_infobia` lives inside it and `script_front.js` reads that input when assembling the add-to-cart request, so deleting the markup would make the cart quantity `NaN`.
 
 Typography is inherited from the theme and the accent defaults to the shop's

@@ -74,11 +74,15 @@
 /* ------------------------------------------------------------------ *
  *  Selected tile
  *
- *  The shop already has a visual language for "this one is included":
- *  the gift tiles carry a solid green frame around the photograph. A
- *  chosen tile uses the same mark, rather than inventing a ring of its
- *  own. The frame width and colour are set inline by the template, so
- *  the colour has to be forced.
+ *  A thin green line just inside the photograph. The template already
+ *  draws a thick neutral frame around every tile; recolouring the whole
+ *  of it shouts, and with five tiles chosen the grid turns into a wall
+ *  of green. Leaving that frame alone and marking the inside edge reads
+ *  clearly without raising the volume.
+ *
+ *  outline with a negative offset rather than an inset box-shadow: on a
+ *  replaced element an inset shadow paints behind the image and would
+ *  not be seen at all.
  * ------------------------------------------------------------------ */
 
 .ipc-root .infobiaCheckbox,
@@ -88,15 +92,14 @@
 
 .ipc-root .imgattrib {
     border-radius: 0;
-    transition: border-color .15s ease;
+    outline: 0 solid transparent;
+    outline-offset: -3px;
+    transition: outline-color .15s ease, outline-width .15s ease;
 }
 
 .ipc-root .ipc-selected .imgattrib {
-    border-color: var(--ipc-accent) !important;
-}
-
-.ipc-root .ipc-selected .titreAttrib {
-    color: var(--ipc-ink);
+    outline: 3px solid var(--ipc-accent);
+    outline-offset: -3px;
 }
 
 /* ------------------------------------------------------------------ *
