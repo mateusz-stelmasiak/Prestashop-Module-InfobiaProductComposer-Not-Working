@@ -20,9 +20,15 @@
 
 class infobia_product_composer extends Module
 {
-    /** Front-office enhancement assets, relative to the module directory. */
+    /**
+     * Front-office enhancement assets, relative to the module directory.
+     * The minified build is preferred when present; the readable source is
+     * the fallback, so the layer still works if only it was copied.
+     */
     const UX_CSS = 'views/css/infobia-ux.css';
     const UX_JS = 'views/js/infobia-ux.js';
+    const UX_CSS_MIN = 'views/css/infobia-ux.min.css';
+    const UX_JS_MIN = 'views/js/infobia-ux.min.js';
 
     /* @var boolean error */
     protected $error = false;
@@ -327,18 +333,33 @@ class infobia_product_composer extends Module
      */
     protected function addUxAssets()
     {
-        if (!$this->hasUxAssets()) {
+        $css = $this->uxAsset(self::UX_CSS_MIN, self::UX_CSS);
+        $js = $this->uxAsset(self::UX_JS_MIN, self::UX_JS);
+
+        if (!$css || !$js) {
             return;
         }
 
-        $this->context->controller->addCSS($this->_path . self::UX_CSS, 'all');
-        $this->context->controller->addJS($this->_path . self::UX_JS, 'all');
+        $this->context->controller->addCSS($this->_path . $css, 'all');
+        $this->context->controller->addJS($this->_path . $js, 'all');
+    }
+
+    /** Minified build if it was copied, else the readable source, else null. */
+    protected function uxAsset($minified, $source)
+    {
+        foreach (array($minified, $source) as $candidate) {
+            if (file_exists(dirname(__FILE__) . '/' . $candidate)) {
+                return $candidate;
+            }
+        }
+
+        return null;
     }
 
     protected function hasUxAssets()
     {
-        return file_exists(dirname(__FILE__) . '/' . self::UX_CSS)
-            && file_exists(dirname(__FILE__) . '/' . self::UX_JS);
+        return $this->uxAsset(self::UX_CSS_MIN, self::UX_CSS) !== null
+            && $this->uxAsset(self::UX_JS_MIN, self::UX_JS) !== null;
     }
 
     public function hookDisplayBackOfficeHeader()

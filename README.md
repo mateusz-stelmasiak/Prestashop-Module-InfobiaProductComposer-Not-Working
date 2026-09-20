@@ -14,7 +14,17 @@ This drop-in replacement also fixes the two things that hurt most on real shops:
    - `views/css/infobia-ux.css`
 3. DONE.
 
-The two `views/` files are **optional**. Copy only `infobia_product_composer.php` and the module keeps its original interface, just faster.
+The `views/` folder carries both a readable source and a minified build of
+each file. The module loads the minified one when it is present and falls
+back to the source, so copying the whole folder is enough. To regenerate
+after editing a source file:
+
+```
+npx terser views/js/infobia-ux.js -c passes=2 -m -o views/js/infobia-ux.min.js
+npx clean-css-cli -O2 views/css/infobia-ux.css -o views/css/infobia-ux.min.css
+```
+
+The `views/` files are **optional**. Copy only `infobia_product_composer.php` and the module keeps its original interface, just faster.
 
 ## WHAT CHANGED
 
