@@ -315,8 +315,11 @@ class infobia_product_composer extends Module
                 $this->context->controller->registerStylesheet('infobia-back', $this->_path . 'views/css/infobia-back.css');
                 $this->context->controller->addCSS($this->_path . 'views/css/infobia-front.css');
 
-                $this->context->controller->addCSS('https://cdn.datatables.net/1.10.20/css/jquery.dataTables.min.css');
-                $this->context->controller->addJS($this->_path . 'js/jquery.dataTables.min.js', 'all');
+                // DataTables used to be loaded here as well, 82.3 KiB of
+                // library plus a stylesheet from cdn.datatables.net, on every
+                // product and home page. Nothing in the front office ever
+                // called it: it is only used by the back-office attribute
+                // screens, which still load it in hookDisplayBackOfficeHeader.
 
                 $this->addUxAssets();
             }

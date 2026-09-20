@@ -49,6 +49,7 @@ Also fixed along the way:
 - Saving the module configuration called the dead licence server and blocked the page until cURL timed out, then reported "invalid key". That call is gone.
 - On the home-page hook, sub-option prices were converted using the tax rate of product `0` instead of the displayed product.
 - Attribute quantities are now clamped to available stock on the home page too, as they already were on the product page.
+- The front office loaded DataTables - 82.3 KiB of JavaScript plus a stylesheet from `cdn.datatables.net` - on every product and home page, and never called it. It is only used by the back-office attribute screens, which still load it. Removing it cut the shop's combined front-end bundle roughly in half.
 
 ### A usable interface for large composers
 
