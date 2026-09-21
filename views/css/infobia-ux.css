@@ -1,4 +1,4 @@
-/*! infobia-ux build 2026-09-20e */
+/*! infobia-ux build 2026-09-21a */
 /**
  * Infobia Product Composer - front office helpers.
  *
@@ -130,8 +130,13 @@
  * ------------------------------------------------------------------ */
 
 .ipc-default {
-    flex: 0 0 100%;
-    width: 100%;
+    /* First and full width, whichever container it lands in: order beats DOM
+     * position in a flex row, and the !important widths beat any bootstrap
+     * col-* class the template puts on its siblings. */
+    order: -1;
+    flex: 0 0 100% !important;
+    width: 100% !important;
+    max-width: 100% !important;
     box-sizing: border-box;
     display: flex;
     align-items: center;

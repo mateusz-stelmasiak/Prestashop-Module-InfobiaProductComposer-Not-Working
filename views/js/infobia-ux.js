@@ -26,7 +26,7 @@
 
     /* Stamped onto the composer root, so which build is actually live can
      * be read straight off the element instead of guessed. */
-    var BUILD = '2026-09-20e';
+    var BUILD = '2026-09-21a';
 
     var ROOT_ID = 'divInfobia';
     var CARD_SELECTOR = '.infobiaCheckbox, .divInfobiaRadio';
@@ -209,8 +209,11 @@
 
             row.addEventListener('click', function () { applyDefaults(section); });
 
-            var grid = section.el.querySelector('.checkbox-container') ||
-                section.el.querySelector('.optionInfobia');
+            /* Prefer the option's own row over the tile grid inside it: the
+             * row is full width whatever the grid turns out to be, so the
+             * banner cannot end up sharing a line with a tile. */
+            var grid = section.el.querySelector('.optionInfobia') ||
+                section.el.querySelector('.checkbox-container');
             if (!grid) { return; }
 
             grid.insertBefore(row, grid.firstChild);
