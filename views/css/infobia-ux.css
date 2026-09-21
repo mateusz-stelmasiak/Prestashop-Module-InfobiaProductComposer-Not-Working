@@ -129,14 +129,19 @@
  *  Default row - first in the grid, the full width of it
  * ------------------------------------------------------------------ */
 
-.ipc-default {
-    /* First and full width, whichever container it lands in: order beats DOM
-     * position in a flex row, and the !important widths beat any bootstrap
-     * col-* class the template puts on its siblings. */
+.ipc-default-cell {
+    /* First and the whole row. The column classes give it the same padding as
+     * the tiles beside it, so its edges line up with theirs; order beats DOM
+     * position in the flex row, and the widths beat the col-* classes. */
     order: -1;
     flex: 0 0 100% !important;
     width: 100% !important;
     max-width: 100% !important;
+    box-sizing: border-box;
+}
+
+.ipc-default {
+    width: 100%;
     box-sizing: border-box;
     display: flex;
     align-items: center;

@@ -209,14 +209,18 @@
 
             row.addEventListener('click', function () { applyDefaults(section); });
 
-            /* Prefer the option's own row over the tile grid inside it: the
-             * row is full width whatever the grid turns out to be, so the
-             * banner cannot end up sharing a line with a tile. */
-            var grid = section.el.querySelector('.optionInfobia') ||
-                section.el.querySelector('.checkbox-container');
+            /* The banner belongs in the same flex row as the tiles, carrying
+             * a column class of its own. A full-width column lines up with
+             * the tiles' own padding instead of overhanging them, and takes
+             * a line to itself whatever the grid's gutter turns out to be. */
+            var grid = section.el.querySelector('.checkbox-container') ||
+                section.el.querySelector('.optionInfobia');
             if (!grid) { return; }
 
-            grid.insertBefore(row, grid.firstChild);
+            var cell = makeEl('div', 'ipc-default-cell col-xs-12 col-sm-12 col-md-12');
+            cell.appendChild(row);
+
+            grid.insertBefore(cell, grid.firstChild);
             section.defaultRow = row;
         });
     }
