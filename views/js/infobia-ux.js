@@ -20,7 +20,6 @@
     var STRINGS = {
         capped: 'maks.',
         defaultTitle: 'Zestaw domyślny',
-        defaultShort: 'domyślny',
         defaultApply: 'Wybierz',
         defaultCurrent: 'Wybrany'
     };
@@ -238,10 +237,15 @@
 
                 pick.card.el.classList.add('ipc-pick');
 
-                if (!pick.card.el.querySelector('.ipc-pick__tag')) {
+                /* The same green disc the banner uses, small, in the
+                 * corner. A word stamped across the photograph was a third
+                 * way of saying one thing. */
+                if (!pick.card.el.querySelector('.ipc-pick__mark')) {
                     var frame = pick.card.el.querySelector('.infobiaCheckboxContent');
                     if (frame) {
-                        frame.appendChild(makeEl('span', 'ipc-pick__tag', STRINGS.defaultShort));
+                        var mark = makeEl('span', 'ipc-pick__mark');
+                        mark.setAttribute('title', STRINGS.defaultTitle);
+                        frame.appendChild(mark);
                     }
                 }
             });
