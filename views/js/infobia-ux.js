@@ -19,7 +19,8 @@
 
     var STRINGS = {
         capped: 'maks.',
-        defaultTitle: 'Domyślny wybór',
+        defaultTitle: 'Zestaw domyślny',
+        defaultShort: 'domyślny',
         defaultApply: 'Wybierz',
         defaultCurrent: 'Wybrany'
     };
@@ -108,8 +109,7 @@
             cards: [],
             badgeEl: null,
             picks: null,
-            heroCard: null,
-            heroEl: null
+            defaultRow: null
         };
     }
 
@@ -187,15 +187,7 @@
         });
     }
 
-    /**
-     * Promote the default choice to the head of the grid, full width.
-     *
-     * This used to draw a separate banner above the tiles saying which option
-     * was the default. Two things claiming to be the same choice, one of them
-     * a picture and one of them a sentence, is one too many: the real tile is
-     * moved to the front and laid out along the row instead, so what the
-     * shopper is being given is the thing itself rather than a label for it.
-     */
+    /** A full-width row at the head of the grid. */
     function buildDefaults() {
         state.sections.forEach(function (section) {
             if (!section.counts || !section.cards.length) { return; }
@@ -203,33 +195,79 @@
             section.picks = defaultPicks(section);
             if (!section.picks.length) { return; }
 
+            var row = makeEl('button', 'ipc-default');
+            row.type = 'button';
+            row.setAttribute('aria-pressed', 'false');
+            row.appendChild(makeEl('span', 'ipc-default__mark'));
+
+            var text = makeEl('span', 'ipc-default__text');
+            text.appendChild(makeEl('span', 'ipc-default__title', STRINGS.defaultTitle));
+            text.appendChild(makeEl('span', 'ipc-default__names',
+                section.picks.map(function (p) {
+                    return String(p.card.name).trim() + (p.qty > 1 ? ' \u00d7' + p.qty : '');
+                }).join(', ')));
+            row.appendChild(text);
+
+            row.addEventListener('click', function () { applyDefaults(section); });
+
+            /* The banner belongs in the same flex row as the tiles, carrying
+             * a column class of its own. A full-width column lines up with
+             * the tiles' own padding instead of overhanging them, and takes
+             * a line to itself whatever the grid's gutter turns out to be. */
             var grid = section.el.querySelector('.checkbox-container') ||
                 section.el.querySelector('.optionInfobia');
             if (!grid) { return; }
 
-            /* Front of the grid, in the order they were picked. Moving the
-             * node is what carries its checkbox, quantity field and the
-             * handlers script_front.js already bound to them. */
+            var cell = makeEl('div', 'ipc-default-cell col-xs-12 col-sm-12 col-md-12');
+            cell.appendChild(row);
+
+            grid.insertBefore(cell, grid.firstChild);
+            section.defaultRow = row;
+
+            /* The banner names the default; the grid should not then make the
+             * shopper hunt for it. Its own tile goes to the front of the
+             * tiles and is marked, so the two agree at a glance. */
             section.picks.slice().reverse().forEach(function (pick) {
                 if (pick.card.el && pick.card.el.parentNode === grid) {
-                    grid.insertBefore(pick.card.el, grid.firstChild);
+                    grid.insertBefore(pick.card.el, cell.nextSibling);
                 }
             });
 
-            var hero = section.picks[0].card;
-            if (!hero.el) { return; }
+            section.picks.forEach(function (pick) {
+                if (!pick.card.el) { return; }
 
-            hero.el.classList.add('ipc-hero');
+                pick.card.el.classList.add('ipc-pick');
 
-            /* Said once, on the tile itself. */
-            if (!hero.el.querySelector('.ipc-hero__tag')) {
-                var tag = makeEl('span', 'ipc-hero__tag', STRINGS.defaultTitle);
-                hero.el.insertBefore(tag, hero.el.firstChild);
-            }
-
-            section.heroCard = hero;
-            section.heroEl = hero.el;
+                if (!pick.card.el.querySelector('.ipc-pick__tag')) {
+                    var frame = pick.card.el.querySelector('.infobiaCheckboxContent');
+                    if (frame) {
+                        frame.appendChild(makeEl('span', 'ipc-pick__tag', STRINGS.defaultShort));
+                    }
+                }
+            });
         });
+    }
+
+    function applyDefaults(section) {
+        section.cards.forEach(function (card) {
+            if (!card.input) { return; }
+
+            var qty = 0;
+            section.picks.forEach(function (p) { if (p.card === card) { qty = p.qty; } });
+            var want = qty > 0;
+
+            if (cardQty(card) === qty && card.input.checked === want) { return; }
+
+            if (card.input.type === 'checkbox' && card.input.checked !== want) {
+                card.input.checked = want;
+                dispatch(card.input, 'change');
+            }
+            if (card.qtyInput) {
+                card.qtyInput.value = String(qty);
+                dispatch(card.qtyInput, 'change');
+            }
+        });
+        refresh();
     }
 
     /** Fires an event the module's own jQuery handlers will also see. */
@@ -308,9 +346,10 @@
         });
 
         state.sections.forEach(function (section) {
-            if (section.heroEl) {
+            if (section.defaultRow) {
                 var at = isAtDefault(section);
-                section.heroEl.classList.toggle('is-current', at);
+                section.defaultRow.classList.toggle('is-current', at);
+                section.defaultRow.setAttribute('aria-pressed', at ? 'true' : 'false');
             }
             if (!section.badgeEl) { return; }
             renderBadge(section, section.cards.reduce(function (sum, card) {
@@ -345,7 +384,7 @@
         // gesture inside the composer, so re-read state just after one.
         ['click', 'change', 'input', 'keyup'].forEach(function (type) {
             root.addEventListener(type, function (event) {
-                if (closest(event.target, '.ipc-hero__tag')) { return; }
+                if (closest(event.target, '.ipc-default')) { return; }
                 window.requestAnimationFrame(refresh);
                 setTimeout(refresh, 180);
             });
