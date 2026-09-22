@@ -161,20 +161,17 @@
     }
 
     /**
-     * What "the default" means here: whatever the back office marked, and
-     * failing that the first items in the shop's own ordering, enough of
-     * them to meet the category minimum.
+     * The defaults are whatever the back office marked. Nothing else.
+     *
+     * This used to fall back to "the first few in the shop's ordering" when
+     * none were configured, which invented a default the shop had never set
+     * and dressed those tiles as chosen. On an option with no defaults that
+     * made the whole row look selected before the shopper had touched it.
      */
     function defaultPicks(section) {
-        var configured = section.cards.filter(function (c) { return defaultQtyOf(c) > 0; });
-        if (configured.length) {
-            return configured.map(function (c) { return { card: c, qty: defaultQtyOf(c) }; });
-        }
-
-        var wanted = Math.max(section.min, 1);
-        if (section.max) { wanted = Math.min(wanted, section.max); }
-
-        return section.cards.slice(0, wanted).map(function (c) { return { card: c, qty: 1 }; });
+        return section.cards
+            .filter(function (c) { return defaultQtyOf(c) > 0; })
+            .map(function (c) { return { card: c, qty: defaultQtyOf(c) }; });
     }
 
     function isAtDefault(section) {
@@ -235,19 +232,9 @@
             section.picks.forEach(function (pick) {
                 if (!pick.card.el) { return; }
 
+                /* Ordering only. Whether a tile looks chosen is decided by
+                 * whether it IS chosen, every time refresh() runs. */
                 pick.card.el.classList.add('ipc-pick');
-
-                /* The same green disc the banner uses, small, in the
-                 * corner. A word stamped across the photograph was a third
-                 * way of saying one thing. */
-                if (!pick.card.el.querySelector('.ipc-pick__mark')) {
-                    var frame = pick.card.el.querySelector('.infobiaCheckboxContent');
-                    if (frame) {
-                        var mark = makeEl('span', 'ipc-pick__mark');
-                        mark.setAttribute('title', STRINGS.defaultTitle);
-                        frame.appendChild(mark);
-                    }
-                }
             });
         });
     }
@@ -342,10 +329,32 @@
         }
     }
 
+    /** The green disc, on every tile, shown only while the tile is chosen. */
+    function ensureMark(card) {
+        if (card.markEl) { return card.markEl; }
+
+        var frame = card.el.querySelector('.infobiaCheckboxContent');
+        if (!frame) { return null; }
+
+        card.markEl = makeEl('span', 'ipc-mark');
+        frame.appendChild(card.markEl);
+        return card.markEl;
+    }
+
     function refresh() {
         state.cards.forEach(function (card) {
             var qty = cardQty(card);
-            card.el.classList.toggle('ipc-selected', qty > 0);
+            var chosen = qty > 0;
+
+            card.el.classList.toggle('ipc-selected', chosen);
+
+            /* Added on first selection and hidden again on deselection,
+             * rather than painted once at load and left there. */
+            var mark = ensureMark(card);
+            if (mark) {
+                mark.classList.toggle('ipc-hidden', !chosen);
+            }
+
             updateCap(card, qty);
         });
 
