@@ -26,7 +26,7 @@
 
     /* Stamped onto the composer root, so which build is actually live can
      * be read straight off the element instead of guessed. */
-    var BUILD = '2026-09-21a';
+    var BUILD = '2026-09-22a';
 
     var ROOT_ID = 'divInfobia';
     var CARD_SELECTOR = '.infobiaCheckbox, .divInfobiaRadio';
