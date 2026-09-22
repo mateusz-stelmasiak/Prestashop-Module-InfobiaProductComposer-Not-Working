@@ -181,11 +181,9 @@
     border-color: var(--ipc-accent) !important;
 }
 
-/* The template hangs a price under the photo; along a row it belongs
- * beside the name, not under the picture. */
-.ipc-root .ipc-hero .infobiaCheckboxContent > .row {
-    display: none;
-}
+/* The price keeps its own place under the photo, as the template puts it.
+ * Nothing inside the tile is hidden or rebuilt -- the checkbox, the price
+ * and the plus/minus are exactly the controls the module rendered. */
 
 .ipc-root .ipc-hero .titreAttrib {
     flex: 1 1 200px;
@@ -194,9 +192,10 @@
     font-size: 1.05rem;
 }
 
+/* Placed in the row, not restyled: no colours, sizes or borders of its own
+ * are touched. */
 .ipc-root .ipc-hero .plusminusDiv {
     flex: 0 0 auto;
-    margin: 0;
 }
 
 .ipc-root .ipc-hero .max-quantity-text {
