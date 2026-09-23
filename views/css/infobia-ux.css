@@ -1,0 +1,256 @@
+/*! infobia-ux build 2026-09-21a */
+/**
+ * Infobia Product Composer - front office helpers.
+ *
+ * Two quiet signals on top of the module's own markup: a count beside each
+ * category heading, and a note on a tile that has hit its maximum. Plus one
+ * thing hidden - see the bottom of the file.
+ *
+ * Typography is inherited from the theme. The accent is the shop's green;
+ * override --ipc-accent to change it, and where the botanical theme skin is
+ * installed it picks that up instead.
+ */
+
+.ipc-root {
+    --ipc-accent: var(--alh-green, #5bb001);
+    --ipc-ink: #1d3c54;
+    --ipc-muted: #97a2ad;
+    --ipc-radius: 4px;
+}
+
+.ipc-hidden {
+    display: none !important;
+}
+
+/* ------------------------------------------------------------------ *
+ *  Category count
+ *
+ *  Set as type, not as a chip. The shop does not use pills anywhere, so
+ *  the count sits beside the heading in the same voice and simply
+ *  changes colour once the category is satisfied.
+ * ------------------------------------------------------------------ */
+
+.ipc-badge {
+    margin-left: 14px;
+    color: var(--ipc-muted);
+    font-size: .62em;
+    font-weight: 400;
+    letter-spacing: 0;
+    vertical-align: middle;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    transition: color .18s ease;
+}
+
+.ipc-badge__n {
+    font-weight: 700;
+    color: var(--ipc-ink);
+}
+
+.ipc-badge--ok,
+.ipc-badge--ok .ipc-badge__n {
+    color: var(--ipc-accent);
+}
+
+.ipc-badge--over,
+.ipc-badge--over .ipc-badge__n {
+    color: #c62828;
+}
+
+/* ------------------------------------------------------------------ *
+ *  Per-tile ceiling
+ * ------------------------------------------------------------------ */
+
+.ipc-cap,
+.ipc-root .max-quantity-text.ipc-cap-hit {
+    display: block;
+    width: 100%;
+    margin-top: 3px;
+    text-align: center;
+    font-size: 11px;
+    letter-spacing: .01em;
+    color: var(--ipc-muted);
+}
+
+/* ------------------------------------------------------------------ *
+ *  Selected tile - one border, and only one
+ *
+ *  The template draws a thick frame around every photograph inline. Left
+ *  alone it is heavy, and anything added beside it reads as a second
+ *  border. So that frame is thinned to a single hairline for every tile,
+ *  and turning it green is the whole of the selected state: no outline,
+ *  no ring, no badge, nothing layered on top.
+ *
+ *  !important is needed because the width and colour are set inline by
+ *  displayCheckboxImg.tpl.
+ * ------------------------------------------------------------------ */
+
+.ipc-root .infobiaCheckbox,
+.ipc-root .divInfobiaRadio {
+    position: relative;
+}
+
+.ipc-root .imgattrib {
+    border-width: 5px !important;
+    border-style: solid !important;
+    border-color: #e6e6e6 !important;
+    border-radius: 0;
+    transition: border-color .15s ease;
+}
+
+.ipc-root .ipc-selected .imgattrib {
+    border-color: var(--ipc-accent) !important;
+}
+
+/* ------------------------------------------------------------------ *
+ *  The sticky bottom bar
+ *
+ *  It repeats the price and the add-to-cart button that are already on
+ *  the page, and covers the last row of tiles on the way down.
+ *
+ *  Hidden rather than removed from the template on purpose:
+ *  #quantity_wanted_infobia lives inside it, and script_front.js reads
+ *  that input when it assembles the add-to-cart request. Take the bar
+ *  out of the DOM and the cart quantity becomes NaN.
+ * ------------------------------------------------------------------ */
+
+.product-prices-infobia {
+    display: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ipc-badge,
+    .ipc-root .imgattrib {
+        transition: none;
+    }
+}
+
+/* ------------------------------------------------------------------ *
+ *  The default's own tile
+ *
+ *  The banner says which option is the default; the grid should not then
+ *  make the shopper hunt for it. Its tile leads the grid, carries the
+ *  accent on its frame and says so in one word over the photograph.
+ *
+ *  Weight only - no new shapes. The frame is the one the template already
+ *  draws, turned to the accent; the word sits in the corner of the picture
+ *  rather than adding a row to the tile.
+ * ------------------------------------------------------------------ */
+
+.ipc-root .ipc-pick {
+    /* Ordering only. A default leads the grid; whether it looks chosen is
+     * decided by whether it is chosen. */
+    order: -1;
+}
+
+.ipc-root .infobiaCheckbox .infobiaCheckboxContent,
+.ipc-root .divInfobiaRadio .infobiaCheckboxContent {
+    position: relative;
+}
+
+.ipc-root .ipc-mark {
+    position: absolute;
+    right: 8px;
+    top: 8px;
+    z-index: 2;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--ipc-accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='3.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E") center / 12px no-repeat;
+    pointer-events: none;
+}
+
+/* ------------------------------------------------------------------ *
+ *  Default row - first in the grid, the full width of it
+ * ------------------------------------------------------------------ */
+
+.ipc-default-cell {
+    /* First and the whole row. The column classes give it the same padding as
+     * the tiles beside it, so its edges line up with theirs; order beats DOM
+     * position in the flex row, and the widths beat the col-* classes. */
+    order: -1;
+    flex: 0 0 100% !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box;
+}
+
+.ipc-default {
+    width: 100%;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin: 0 0 18px;
+    padding: 16px 20px;
+    border: 2px solid #e6e6e6;
+    border-radius: var(--ipc-radius);
+    background: #fff;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color .15s ease;
+}
+
+.ipc-default:hover {
+    border-color: var(--ipc-accent);
+}
+
+.ipc-default__mark {
+    flex: 0 0 auto;
+    position: relative;
+    width: 22px;
+    height: 22px;
+    border: 2px solid #d5d5d5;
+    border-radius: 50%;
+}
+
+.ipc-default.is-current {
+    border-color: var(--ipc-accent);
+}
+
+.ipc-default.is-current .ipc-default__mark {
+    border-color: var(--ipc-accent);
+    background: var(--ipc-accent);
+}
+
+.ipc-default.is-current .ipc-default__mark::after {
+    content: "";
+    position: absolute;
+    left: 6px;
+    top: 2px;
+    width: 5px;
+    height: 10px;
+    border: solid #fff;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+}
+
+.ipc-default__text {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+
+.ipc-default__title {
+    font-weight: 700;
+    color: var(--ipc-ink);
+}
+
+.ipc-default__names {
+    font-size: 13px;
+    color: var(--ipc-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+    .ipc-default {
+        padding: 14px;
+    }
+    .ipc-default__names {
+        white-space: normal;
+    }
+}
